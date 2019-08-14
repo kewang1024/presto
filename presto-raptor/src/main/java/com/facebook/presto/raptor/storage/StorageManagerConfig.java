@@ -62,6 +62,7 @@ public class StorageManagerConfig
     private int recoveryThreads = 10;
     private int organizationThreads = 5;
     private boolean organizationEnabled = true;
+    private boolean deltaDeleteEnabled;
     private Duration organizationDiscoveryInterval = new Duration(6, TimeUnit.HOURS);
     private Duration organizationInterval = new Duration(7, TimeUnit.DAYS);
 
@@ -71,6 +72,20 @@ public class StorageManagerConfig
     private int oneSplitPerBucketThreshold;
     private String shardDayBoundaryTimeZone = TimeZoneKey.UTC_KEY.getId();
     private int maxAllowedFilesPerWriter = Integer.MAX_VALUE;
+
+    @NotNull
+    public boolean isDeltaDeleteEnabled()
+    {
+        return deltaDeleteEnabled;
+    }
+
+    @Config("storage.delta-delete-enabled")
+    @ConfigDescription("Enable delta delete by default when creating table")
+    public StorageManagerConfig setDeltaDeleteEnabled(boolean deltaDeleteEnabled)
+    {
+        this.deltaDeleteEnabled = deltaDeleteEnabled;
+        return this;
+    }
 
     @NotNull
     public File getDataDirectory()
