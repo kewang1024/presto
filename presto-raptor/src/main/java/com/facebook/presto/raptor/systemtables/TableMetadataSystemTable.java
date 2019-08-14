@@ -89,7 +89,8 @@ public class TableMetadataSystemTable
                         new ColumnMetadata("distribution_name", VARCHAR),
                         new ColumnMetadata("bucket_count", BIGINT),
                         new ColumnMetadata("bucketing_columns", arrayOfVarchar),
-                        new ColumnMetadata("organized", BOOLEAN)));
+                        new ColumnMetadata("organized", BOOLEAN),
+                        new ColumnMetadata("delta_delete_enabled", BOOLEAN)));
     }
 
     @Override
@@ -190,6 +191,9 @@ public class TableMetadataSystemTable
 
             // organized
             BOOLEAN.writeBoolean(pageBuilder.nextBlockBuilder(), tableRow.isOrganized());
+
+            // delta delete enabled
+            BOOLEAN.writeBoolean(pageBuilder.nextBlockBuilder(), tableRow.isDeltaDeleteEnabled());
         }
 
         return pageBuilder.build();

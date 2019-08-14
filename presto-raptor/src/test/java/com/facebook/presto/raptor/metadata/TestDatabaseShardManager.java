@@ -46,7 +46,9 @@ import org.testng.annotations.Test;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
@@ -119,6 +121,24 @@ public class TestDatabaseShardManager
     {
         dummyHandle.close();
         deleteRecursively(dataDir.toPath(), ALLOW_INSECURE);
+    }
+
+    @Test
+    public void testCreateTable()
+            throws SQLException
+    {
+        long tableId = createTable("test");
+        List<ColumnInfo> columns = ImmutableList.of(new ColumnInfo(1, BIGINT));
+        shardManager.createTable(tableId, columns, false, OptionalLong.empty());
+
+        Statement stmt = dummyHandle.getConnection().createStatement();
+        ResultSet resultSet = stmt.executeQuery("select * from " + shardIndexTable(tableId));
+        ResultSetMetaData metaData = resultSet.getMetaData();
+        assertEquals(metaData.getColumnLabel(1), "SHARD_ID");
+        assertEquals(metaData.getColumnLabel(2), "SHARD_UUID");
+        assertEquals(metaData.getColumnLabel(3), "DELTA_SHARD_UUID");
+        resultSet.close();
+        stmt.close();
     }
 
     @Test
@@ -713,7 +733,7 @@ public class TestDatabaseShardManager
 
     private long createTable(String name)
     {
-        return dbi.onDemand(MetadataDao.class).insertTable("test", name, false, false, null, 0);
+        return dbi.onDemand(MetadataDao.class).insertTable("test", name, false, false, null, 0, false);
     }
 
     public static ShardInfo shardInfo(UUID shardUuid, String nodeIdentifier)

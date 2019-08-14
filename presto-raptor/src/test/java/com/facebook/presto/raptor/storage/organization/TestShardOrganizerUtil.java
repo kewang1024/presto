@@ -110,6 +110,7 @@ public class TestShardOrganizerUtil
                         .column("orderstatus", createVarcharType(3))
                         .property("ordering", ImmutableList.of("orderstatus", "orderkey"))
                         .property("temporal_column", "orderdate")
+                        .property("delta_delete_enabled", false)
                         .build(),
                 false);
         Table tableInfo = metadataDao.getTableInformation(tableName.getSchemaName(), tableName.getTableName());

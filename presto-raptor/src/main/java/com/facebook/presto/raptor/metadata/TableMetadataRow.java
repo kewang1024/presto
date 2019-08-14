@@ -35,6 +35,7 @@ public class TableMetadataRow
     private final Optional<String> distributionName;
     private final OptionalInt bucketCount;
     private final boolean organized;
+    private final boolean deltaDeleteEnabled;
 
     public TableMetadataRow(
             long tableId,
@@ -43,7 +44,8 @@ public class TableMetadataRow
             OptionalLong temporalColumnId,
             Optional<String> distributionName,
             OptionalInt bucketCount,
-            boolean organized)
+            boolean organized,
+            boolean deltaDeleteEnabled)
     {
         this.tableId = tableId;
         this.schemaName = requireNonNull(schemaName, "schemaName is null");
@@ -52,6 +54,7 @@ public class TableMetadataRow
         this.distributionName = requireNonNull(distributionName, "distributionName is null");
         this.bucketCount = requireNonNull(bucketCount, "bucketCount is null");
         this.organized = organized;
+        this.deltaDeleteEnabled = deltaDeleteEnabled;
     }
 
     public long getTableId()
@@ -89,6 +92,11 @@ public class TableMetadataRow
         return organized;
     }
 
+    public boolean isDeltaDeleteEnabled()
+    {
+        return deltaDeleteEnabled;
+    }
+
     public static class Mapper
             implements ResultSetMapper<TableMetadataRow>
     {
@@ -103,7 +111,8 @@ public class TableMetadataRow
                     getOptionalLong(rs, "temporal_column_id"),
                     Optional.ofNullable(rs.getString("distribution_name")),
                     getOptionalInt(rs, "bucket_count"),
-                    rs.getBoolean("organization_enabled"));
+                    rs.getBoolean("organization_enabled"),
+                    rs.getBoolean("delta_delete_enabled"));
         }
     }
 }
