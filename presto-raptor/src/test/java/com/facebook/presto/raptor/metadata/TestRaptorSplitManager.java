@@ -54,6 +54,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static com.facebook.presto.raptor.RaptorTableProperties.DELTA_DELETE_PROPERTY;
 import static com.facebook.presto.raptor.metadata.DatabaseShardManager.shardIndexTable;
 import static com.facebook.presto.raptor.metadata.SchemaDaoUtil.createTablesWithRetry;
 import static com.facebook.presto.raptor.metadata.TestDatabaseShardManager.shardInfo;
@@ -80,6 +81,7 @@ public class TestRaptorSplitManager
             .column("ds", createVarcharType(10))
             .column("foo", createVarcharType(10))
             .column("bar", BigintType.BIGINT)
+            .property(DELTA_DELETE_PROPERTY, false)
             .build();
 
     private Handle dummyHandle;

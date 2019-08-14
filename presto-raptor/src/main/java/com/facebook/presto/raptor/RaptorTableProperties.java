@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.raptor;
 
+import com.facebook.presto.raptor.storage.StorageManagerConfig;
 import com.facebook.presto.spi.session.PropertyMetadata;
 import com.facebook.presto.spi.type.TypeManager;
 import com.facebook.presto.spi.type.TypeSignatureParameter;
@@ -39,11 +40,12 @@ public class RaptorTableProperties
     public static final String BUCKETED_ON_PROPERTY = "bucketed_on";
     public static final String DISTRIBUTION_NAME_PROPERTY = "distribution_name";
     public static final String ORGANIZED_PROPERTY = "organized";
+    public static final String DELTA_DELETE_PROPERTY = "delta_delete_enabled";
 
     private final List<PropertyMetadata<?>> tableProperties;
 
     @Inject
-    public RaptorTableProperties(TypeManager typeManager)
+    public RaptorTableProperties(TypeManager typeManager, StorageManagerConfig storageManagerConfig)
     {
         tableProperties = ImmutableList.<PropertyMetadata<?>>builder()
                 .add(stringListSessionProperty(
@@ -69,6 +71,11 @@ public class RaptorTableProperties
                         ORGANIZED_PROPERTY,
                         "Keep the table organized using the sort order",
                         null,
+                        false))
+                .add(booleanProperty(
+                        DELTA_DELETE_PROPERTY,
+                        "Enable delta delete on the table",
+                        storageManagerConfig.isDeltaDeleteEnabled(),
                         false))
                 .build();
     }
@@ -108,6 +115,11 @@ public class RaptorTableProperties
     {
         Boolean value = (Boolean) tableProperties.get(ORGANIZED_PROPERTY);
         return (value == null) ? false : value;
+    }
+
+    public static boolean isDeltaDeleteEnabled(Map<String, Object> tableProperties)
+    {
+        return (Boolean) tableProperties.get(DELTA_DELETE_PROPERTY);
     }
 
     public static PropertyMetadata<String> lowerCaseStringSessionProperty(String name, String description)
