@@ -74,10 +74,10 @@ final class ShardIterator
 
         String sql;
         if (bucketToNode.isPresent()) {
-            sql = "SELECT shard_uuid, bucket_number FROM %s WHERE %s ORDER BY bucket_number";
+            sql = "SELECT shard_uuid, delta_shard_uuid, bucket_number FROM %s WHERE %s ORDER BY bucket_number";
         }
         else {
-            sql = "SELECT shard_uuid, node_ids FROM %s WHERE %s";
+            sql = "SELECT shard_uuid, delta_shard_uuid, node_ids FROM %s WHERE %s";
         }
         sql = format(sql, shardIndexTable(tableId), predicate.getPredicate());
 
@@ -138,6 +138,7 @@ final class ShardIterator
         }
 
         UUID shardUuid = uuidFromBytes(resultSet.getBytes("shard_uuid"));
+        UUID deltaShardUuid = resultSet.getBytes("delta_shard_uuid") == null ? null : uuidFromBytes(resultSet.getBytes("delta_shard_uuid"));
         Set<String> nodeIdentifiers;
         OptionalInt bucketNumber = OptionalInt.empty();
 
@@ -151,7 +152,7 @@ final class ShardIterator
             nodeIdentifiers = getNodeIdentifiers(nodeIds, shardUuid);
         }
 
-        ShardNodes shard = new ShardNodes(shardUuid, nodeIdentifiers);
+        ShardNodes shard = new ShardNodes(shardUuid, deltaShardUuid, nodeIdentifiers);
         return new BucketShards(bucketNumber, ImmutableSet.of(shard));
     }
 
@@ -176,10 +177,11 @@ final class ShardIterator
 
         do {
             UUID shardUuid = uuidFromBytes(resultSet.getBytes("shard_uuid"));
+            UUID deltaShardUuid = resultSet.getBytes("delta_shard_uuid") == null ? null : uuidFromBytes(resultSet.getBytes("delta_shard_uuid"));
             int bucket = resultSet.getInt("bucket_number");
             Set<String> nodeIdentifiers = ImmutableSet.of(getBucketNode(bucket));
 
-            shards.add(new ShardNodes(shardUuid, nodeIdentifiers));
+            shards.add(new ShardNodes(shardUuid, deltaShardUuid, nodeIdentifiers));
         }
         while (resultSet.next() && resultSet.getInt("bucket_number") == bucketNumber);
 

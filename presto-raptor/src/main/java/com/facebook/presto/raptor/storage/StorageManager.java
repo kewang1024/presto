@@ -29,24 +29,28 @@ public interface StorageManager
 {
     default ConnectorPageSource getPageSource(
             UUID shardUuid,
+            Optional<UUID> deltaShardUuid,
             OptionalInt bucketNumber,
             List<Long> columnIds,
             List<Type> columnTypes,
             TupleDomain<RaptorColumnHandle> effectivePredicate,
-            ReaderAttributes readerAttributes)
+            ReaderAttributes readerAttributes,
+            Optional<Boolean> deltaDelete)
     {
-        return getPageSource(shardUuid, bucketNumber, columnIds, columnTypes, effectivePredicate, readerAttributes, OptionalLong.empty(), Optional.empty());
+        return getPageSource(shardUuid, deltaShardUuid, bucketNumber, columnIds, columnTypes, effectivePredicate, readerAttributes, OptionalLong.empty(), Optional.empty(), deltaDelete);
     }
 
     ConnectorPageSource getPageSource(
             UUID shardUuid,
+            Optional<UUID> deltaShardUuid,
             OptionalInt bucketNumber,
             List<Long> columnIds,
             List<Type> columnTypes,
             TupleDomain<RaptorColumnHandle> effectivePredicate,
             ReaderAttributes readerAttributes,
             OptionalLong transactionId,
-            Optional<Map<String, Type>> allColumnTypes);
+            Optional<Map<String, Type>> allColumnTypes,
+            Optional<Boolean> deltaDelete);
 
     StoragePageSink createStoragePageSink(
             long transactionId,

@@ -248,13 +248,15 @@ public class OrcStorageManager
     @Override
     public ConnectorPageSource getPageSource(
             UUID shardUuid,
+            Optional<UUID> deltaShardUuid,
             OptionalInt bucketNumber,
             List<Long> columnIds,
             List<Type> columnTypes,
             TupleDomain<RaptorColumnHandle> effectivePredicate,
             ReaderAttributes readerAttributes,
             OptionalLong transactionId,
-            Optional<Map<String, Type>> allColumnTypes)
+            Optional<Map<String, Type>> allColumnTypes,
+            Optional<Boolean> deltaDelete)
     {
         OrcDataSource dataSource = openShard(shardUuid, readerAttributes);
 
@@ -290,10 +292,10 @@ public class OrcStorageManager
             Optional<ShardRewriter> shardRewriter = Optional.empty();
             if (transactionId.isPresent()) {
                 checkState(allColumnTypes.isPresent());
-                shardRewriter = Optional.of(createShardRewriter(transactionId.getAsLong(), bucketNumber, shardUuid, allColumnTypes.get()));
+                shardRewriter = Optional.of(createShardRewriter(transactionId.getAsLong(), bucketNumber, shardUuid, deltaShardUuid, allColumnTypes.get(), deltaDelete));
             }
 
-            return new OrcPageSource(shardRewriter, recordReader, dataSource, columnIds, columnTypes, columnIndexes.build(), shardUuid, bucketNumber, systemMemoryUsage);
+            return new OrcPageSource(shardRewriter, recordReader, dataSource, columnIds, columnTypes, columnIndexes.build(), shardUuid, bucketNumber, systemMemoryUsage, deltaDelete);
         }
         catch (IOException | RuntimeException e) {
             closeQuietly(dataSource);
@@ -328,13 +330,13 @@ public class OrcStorageManager
         return new OrcStoragePageSink(transactionId, columnIds, columnTypes, bucketNumber);
     }
 
-    private ShardRewriter createShardRewriter(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Map<String, Type> columns)
+    private ShardRewriter createShardRewriter(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Optional<UUID> deltaShardUuid, Map<String, Type> columns, Optional<Boolean> deltaDelete)
     {
         return rowsToDelete -> {
             if (rowsToDelete.isEmpty()) {
                 return completedFuture(ImmutableList.of());
             }
-            return supplyAsync(() -> rewriteShard(transactionId, bucketNumber, shardUuid, columns, rowsToDelete), deletionExecutor);
+            return supplyAsync(() -> rewriteShard(transactionId, bucketNumber, shardUuid, deltaShardUuid, columns, rowsToDelete, deltaDelete), deletionExecutor);
         };
     }
 
@@ -425,7 +427,7 @@ public class OrcStorageManager
     }
 
     @VisibleForTesting
-    Collection<Slice> rewriteShard(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Map<String, Type> columns, BitSet rowsToDelete)
+    Collection<Slice> rewriteShard(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Optional<UUID> deltaShardUuid, Map<String, Type> columns, BitSet rowsToDelete, Optional<Boolean> deltaDelete)
     {
         if (rowsToDelete.isEmpty()) {
             return ImmutableList.of();

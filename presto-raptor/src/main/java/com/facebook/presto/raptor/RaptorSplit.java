@@ -38,63 +38,75 @@ public class RaptorSplit
 {
     private final String connectorId;
     private final Set<UUID> shardUuids;
+    private final Optional<Map<UUID, UUID>> shardDeltaMap;
     private final OptionalInt bucketNumber;
     private final List<HostAddress> addresses;
     private final TupleDomain<RaptorColumnHandle> effectivePredicate;
     private final OptionalLong transactionId;
     private final Optional<Map<String, Type>> columnTypes;
+    private final Optional<Boolean> deltaDelete;
 
     @JsonCreator
     public RaptorSplit(
             @JsonProperty("connectorId") String connectorId,
             @JsonProperty("shardUuids") Set<UUID> shardUuids,
+            @JsonProperty("shardDeltaMap") Optional<Map<UUID, UUID>> shardDeltaMap,
             @JsonProperty("bucketNumber") OptionalInt bucketNumber,
             @JsonProperty("effectivePredicate") TupleDomain<RaptorColumnHandle> effectivePredicate,
             @JsonProperty("transactionId") OptionalLong transactionId,
-            @JsonProperty("columnTypes") Optional<Map<String, Type>> columnTypes)
+            @JsonProperty("columnTypes") Optional<Map<String, Type>> columnTypes,
+            @JsonProperty("deltaDelete") Optional<Boolean> deltaDelete)
     {
-        this(connectorId, shardUuids, bucketNumber, ImmutableList.of(), effectivePredicate, transactionId, columnTypes);
+        this(connectorId, shardUuids, shardDeltaMap, bucketNumber, ImmutableList.of(), effectivePredicate, transactionId, columnTypes, deltaDelete);
     }
 
     public RaptorSplit(
             String connectorId,
             UUID shardUuid,
+            Optional<Map<UUID, UUID>> shardDeltaMap,
             List<HostAddress> addresses,
             TupleDomain<RaptorColumnHandle> effectivePredicate,
             OptionalLong transactionId,
-            Optional<Map<String, Type>> columnTypes)
+            Optional<Map<String, Type>> columnTypes,
+            Optional<Boolean> deltaDelete)
     {
-        this(connectorId, ImmutableSet.of(shardUuid), OptionalInt.empty(), addresses, effectivePredicate, transactionId, columnTypes);
+        this(connectorId, ImmutableSet.of(shardUuid), shardDeltaMap, OptionalInt.empty(), addresses, effectivePredicate, transactionId, columnTypes, deltaDelete);
     }
 
     public RaptorSplit(
             String connectorId,
             Set<UUID> shardUuids,
+            Optional<Map<UUID, UUID>> shardDeltaMap,
             int bucketNumber,
             HostAddress address,
             TupleDomain<RaptorColumnHandle> effectivePredicate,
             OptionalLong transactionId,
-            Optional<Map<String, Type>> columnTypes)
+            Optional<Map<String, Type>> columnTypes,
+            Optional<Boolean> deltaDelete)
     {
-        this(connectorId, shardUuids, OptionalInt.of(bucketNumber), ImmutableList.of(address), effectivePredicate, transactionId, columnTypes);
+        this(connectorId, shardUuids, shardDeltaMap, OptionalInt.of(bucketNumber), ImmutableList.of(address), effectivePredicate, transactionId, columnTypes, deltaDelete);
     }
 
     private RaptorSplit(
             String connectorId,
             Set<UUID> shardUuids,
+            Optional<Map<UUID, UUID>> shardDeltaMap,
             OptionalInt bucketNumber,
             List<HostAddress> addresses,
             TupleDomain<RaptorColumnHandle> effectivePredicate,
             OptionalLong transactionId,
-            Optional<Map<String, Type>> columnTypes)
+            Optional<Map<String, Type>> columnTypes,
+            Optional<Boolean> deltaDelete)
     {
         this.connectorId = requireNonNull(connectorId, "connectorId is null");
         this.shardUuids = ImmutableSet.copyOf(requireNonNull(shardUuids, "shardUuid is null"));
+        this.shardDeltaMap = requireNonNull(shardDeltaMap, "shardUuid is null");
         this.bucketNumber = requireNonNull(bucketNumber, "bucketNumber is null");
         this.addresses = ImmutableList.copyOf(requireNonNull(addresses, "addresses is null"));
         this.effectivePredicate = requireNonNull(effectivePredicate, "effectivePredicate is null");
         this.transactionId = requireNonNull(transactionId, "transactionId is null");
         this.columnTypes = requireNonNull(columnTypes, "columnTypes is null");
+        this.deltaDelete = requireNonNull(deltaDelete, "deltaDelete is null");
     }
 
     @Override
@@ -122,6 +134,12 @@ public class RaptorSplit
     }
 
     @JsonProperty
+    public Optional<Map<UUID, UUID>> getShardDeltaMap()
+    {
+        return shardDeltaMap;
+    }
+
+    @JsonProperty
     public OptionalInt getBucketNumber()
     {
         return bucketNumber;
@@ -145,6 +163,12 @@ public class RaptorSplit
         return columnTypes;
     }
 
+    @JsonProperty
+    public Optional<Boolean> getDeltaDelete()
+    {
+        return deltaDelete;
+    }
+
     @Override
     public Object getInfo()
     {
@@ -156,6 +180,7 @@ public class RaptorSplit
     {
         return toStringHelper(this)
                 .add("shardUuids", shardUuids)
+                .add("shardDeltaMap", shardDeltaMap.isPresent() ? shardDeltaMap.toString() : null)
                 .add("bucketNumber", bucketNumber.isPresent() ? bucketNumber.getAsInt() : null)
                 .add("hosts", addresses)
                 .omitNullValues()

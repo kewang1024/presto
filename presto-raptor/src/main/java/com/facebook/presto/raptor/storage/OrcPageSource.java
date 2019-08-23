@@ -84,7 +84,8 @@ public class OrcPageSource
             List<Integer> columnIndexes,
             UUID shardUuid,
             OptionalInt bucketNumber,
-            AggregatedMemoryContext systemMemoryContext)
+            AggregatedMemoryContext systemMemoryContext,
+            Optional<Boolean> deltaDelete)
     {
         this.shardRewriter = requireNonNull(shardRewriter, "shardRewriter is null");
         this.recordReader = requireNonNull(recordReader, "recordReader is null");

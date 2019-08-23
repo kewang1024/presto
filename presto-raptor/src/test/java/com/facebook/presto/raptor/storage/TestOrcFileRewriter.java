@@ -53,6 +53,7 @@ import java.math.BigDecimal;
 import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -517,11 +518,13 @@ public class TestOrcFileRewriter
 
         ConnectorPageSource source = storageManager.getPageSource(
                 uuid,
+                Optional.empty(),
                 OptionalInt.empty(),
                 ImmutableList.of(13L, 7L, 18L),
                 ImmutableList.of(createVarcharType(5), createVarcharType(20), INTEGER),
                 TupleDomain.all(),
-                READER_ATTRIBUTES);
+                READER_ATTRIBUTES,
+                Optional.of(false));
 
         Page page = null;
         while (page == null) {
@@ -629,11 +632,13 @@ public class TestOrcFileRewriter
 
         ConnectorPageSource source = storageManager.getPageSource(
                 uuid,
+                Optional.empty(),
                 OptionalInt.empty(),
                 ImmutableList.of(3L, 7L, 8L),
                 ImmutableList.of(createVarcharType(5), createVarcharType(20), INTEGER),
                  TupleDomain.all(),
-                READER_ATTRIBUTES);
+                READER_ATTRIBUTES,
+                Optional.of(false));
 
         Page page = null;
         while (page == null) {

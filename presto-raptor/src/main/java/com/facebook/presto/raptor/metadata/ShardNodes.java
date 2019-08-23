@@ -25,17 +25,24 @@ import static java.util.Objects.requireNonNull;
 public class ShardNodes
 {
     private final UUID shardUuid;
+    private final UUID deltaShardUuid;
     private final Set<String> nodeIdentifiers;
 
-    public ShardNodes(UUID shardUuid, Set<String> nodeIdentifiers)
+    public ShardNodes(UUID shardUuid, UUID deltaShardUuid, Set<String> nodeIdentifiers)
     {
         this.shardUuid = requireNonNull(shardUuid, "shardUuid is null");
+        this.deltaShardUuid = deltaShardUuid;
         this.nodeIdentifiers = ImmutableSet.copyOf(requireNonNull(nodeIdentifiers, "nodeIdentifiers is null"));
     }
 
     public UUID getShardUuid()
     {
         return shardUuid;
+    }
+
+    public UUID getDeltaShardUuid()
+    {
+        return deltaShardUuid;
     }
 
     public Set<String> getNodeIdentifiers()
@@ -54,6 +61,7 @@ public class ShardNodes
         }
         ShardNodes other = (ShardNodes) obj;
         return Objects.equals(this.shardUuid, other.shardUuid) &&
+                Objects.equals(this.deltaShardUuid, other.deltaShardUuid) &&
                 Objects.equals(this.nodeIdentifiers, other.nodeIdentifiers);
     }
 
@@ -68,6 +76,7 @@ public class ShardNodes
     {
         return toStringHelper(this)
                 .add("shardUuid", shardUuid)
+                .add("deltaShardUuid", deltaShardUuid)
                 .add("nodeIdentifiers", nodeIdentifiers)
                 .toString();
     }
