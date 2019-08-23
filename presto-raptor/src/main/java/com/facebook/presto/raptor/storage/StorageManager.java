@@ -29,17 +29,21 @@ public interface StorageManager
 {
     default ConnectorPageSource getPageSource(
             UUID shardUuid,
+            Optional<UUID> deltaShardUuid,
+            boolean deltaDeleteEnabled,
             OptionalInt bucketNumber,
             List<Long> columnIds,
             List<Type> columnTypes,
             TupleDomain<RaptorColumnHandle> effectivePredicate,
             ReaderAttributes readerAttributes)
     {
-        return getPageSource(shardUuid, bucketNumber, columnIds, columnTypes, effectivePredicate, readerAttributes, OptionalLong.empty(), Optional.empty());
+        return getPageSource(shardUuid, deltaShardUuid, deltaDeleteEnabled, bucketNumber, columnIds, columnTypes, effectivePredicate, readerAttributes, OptionalLong.empty(), Optional.empty());
     }
 
     ConnectorPageSource getPageSource(
             UUID shardUuid,
+            Optional<UUID> deltaShardUuid,
+            boolean deltaDeleteEnabled,
             OptionalInt bucketNumber,
             List<Long> columnIds,
             List<Type> columnTypes,
