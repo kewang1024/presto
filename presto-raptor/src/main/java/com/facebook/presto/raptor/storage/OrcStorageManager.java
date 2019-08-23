@@ -248,6 +248,8 @@ public class OrcStorageManager
     @Override
     public ConnectorPageSource getPageSource(
             UUID shardUuid,
+            Optional<UUID> deltaShardUuid,
+            boolean tableSupportsDeltaDelete,
             OptionalInt bucketNumber,
             List<Long> columnIds,
             List<Type> columnTypes,
@@ -292,8 +294,7 @@ public class OrcStorageManager
                 checkState(allColumnTypes.isPresent());
                 shardRewriter = Optional.of(createShardRewriter(transactionId.getAsLong(), bucketNumber, shardUuid, allColumnTypes.get()));
             }
-
-            return new OrcPageSource(shardRewriter, recordReader, dataSource, columnIds, columnTypes, columnIndexes.build(), shardUuid, bucketNumber, systemMemoryUsage);
+            return new OrcPageSource(shardRewriter, recordReader, dataSource, columnIds, columnTypes, columnIndexes.build(), shardUuid, tableSupportsDeltaDelete, bucketNumber, systemMemoryUsage);
         }
         catch (IOException | RuntimeException e) {
             closeQuietly(dataSource);
