@@ -522,15 +522,15 @@ public class DatabaseShardManager
     }
 
     @Override
-    public ResultIterator<BucketShards> getShardNodes(long tableId, TupleDomain<RaptorColumnHandle> effectivePredicate)
+    public ResultIterator<BucketShards> getShardNodes(long tableId, boolean deltaDeleteEnabled, TupleDomain<RaptorColumnHandle> effectivePredicate)
     {
-        return new ShardIterator(tableId, false, Optional.empty(), effectivePredicate, dbi);
+        return new ShardIterator(tableId, deltaDeleteEnabled, false, Optional.empty(), effectivePredicate, dbi);
     }
 
     @Override
-    public ResultIterator<BucketShards> getShardNodesBucketed(long tableId, boolean merged, List<String> bucketToNode, TupleDomain<RaptorColumnHandle> effectivePredicate)
+    public ResultIterator<BucketShards> getShardNodesBucketed(long tableId, boolean deltaDeleteEnabled, boolean merged, List<String> bucketToNode, TupleDomain<RaptorColumnHandle> effectivePredicate)
     {
-        return new ShardIterator(tableId, merged, Optional.of(bucketToNode), effectivePredicate, dbi);
+        return new ShardIterator(tableId, deltaDeleteEnabled, merged, Optional.of(bucketToNode), effectivePredicate, dbi);
     }
 
     @Override
