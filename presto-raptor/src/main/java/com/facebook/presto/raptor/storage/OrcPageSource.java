@@ -23,6 +23,7 @@ import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
 import com.facebook.presto.spi.block.LazyBlock;
 import com.facebook.presto.spi.block.LazyBlockLoader;
+import com.facebook.presto.spi.block.LongArrayBlockBuilder;
 import com.facebook.presto.spi.block.RunLengthEncodedBlock;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableList;
@@ -62,6 +63,8 @@ public class OrcPageSource
     private final OrcDataSource orcDataSource;
 
     private final BitSet rowsToDelete;
+    // todo one block can't hold one orcfile
+    BlockBuilder blockBuilder = new LongArrayBlockBuilder(null, 1000);
 
     private final List<Long> columnIds;
     private final List<Type> types;
@@ -215,6 +218,7 @@ public class OrcPageSource
         for (int i = 0; i < rowIds.getPositionCount(); i++) {
             long rowId = BIGINT.getLong(rowIds, i);
             rowsToDelete.set(toIntExact(rowId));
+            blockBuilder.writeLong(rowId);
         }
     }
 
@@ -222,7 +226,7 @@ public class OrcPageSource
     public CompletableFuture<Collection<Slice>> finish()
     {
         checkState(shardRewriter.isPresent(), "shardRewriter is missing");
-        return shardRewriter.get().rewrite(rowsToDelete);
+        return shardRewriter.get().rewrite(rowsToDelete, blockBuilder.build());
     }
 
     @Override

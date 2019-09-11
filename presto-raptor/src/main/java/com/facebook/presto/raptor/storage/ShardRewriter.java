@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.raptor.storage;
 
+import com.facebook.presto.spi.block.Block;
 import io.airlift.slice.Slice;
 
 import java.util.BitSet;
@@ -21,5 +22,5 @@ import java.util.concurrent.CompletableFuture;
 
 public interface ShardRewriter
 {
-    CompletableFuture<Collection<Slice>> rewrite(BitSet rowsToDelete);
+    CompletableFuture<Collection<Slice>> rewrite(BitSet rowsToDelete, Block blockToDelete);
 }

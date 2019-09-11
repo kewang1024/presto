@@ -21,6 +21,7 @@ import com.facebook.presto.raptor.backup.BackupStore;
 import com.facebook.presto.raptor.backup.FileBackupStore;
 import com.facebook.presto.raptor.filesystem.RaptorLocalFileSystem;
 import com.facebook.presto.raptor.metadata.ColumnStats;
+import com.facebook.presto.raptor.metadata.ShardDeleteDelta;
 import com.facebook.presto.raptor.metadata.ShardDelta;
 import com.facebook.presto.raptor.metadata.ShardInfo;
 import com.facebook.presto.raptor.metadata.ShardManager;
@@ -30,6 +31,7 @@ import com.facebook.presto.spi.ConnectorPageSource;
 import com.facebook.presto.spi.NodeManager;
 import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.block.Block;
+import com.facebook.presto.spi.block.LongArrayBlockBuilder;
 import com.facebook.presto.spi.predicate.NullableValue;
 import com.facebook.presto.spi.predicate.TupleDomain;
 import com.facebook.presto.spi.type.SqlDate;
@@ -345,6 +347,7 @@ public class TestOrcStorageManager
         // delete one row
         BitSet rowsToDelete = new BitSet();
         rowsToDelete.set(0);
+        // regular rewrite
         Collection<Slice> fragments = manager.rewriteShard(
                 transactionId,
                 OptionalInt.empty(),
@@ -352,6 +355,7 @@ public class TestOrcStorageManager
                 Optional.empty(),
                 IntStream.range(0, columnIds.size()).boxed().collect(Collectors.toMap(index -> String.valueOf(columnIds.get(index)), columnTypes::get)),
                 rowsToDelete,
+                null,
                 Optional.of(false));
 
         Slice shardDelta = Iterables.getOnlyElement(fragments);
@@ -371,6 +375,136 @@ public class TestOrcStorageManager
         assertEquals(recordedShards.size(), 2);
         assertEquals(recordedShards.get(1).getTransactionId(), TRANSACTION_ID);
         assertEquals(recordedShards.get(1).getShardUuid(), shardInfo.getShardUuid());
+    }
+
+    @Test
+    public void testRewriterWithDeltaDelete()
+            throws Exception
+    {
+        // delete one row
+        BitSet rowsToDelete = new BitSet();
+        rowsToDelete.set(0);
+        LongArrayBlockBuilder blockBuilder = new LongArrayBlockBuilder(null, 1);
+        blockBuilder.writeLong(0);
+        Collection<Slice> fragments = deltaDelete(rowsToDelete, blockBuilder.build(), false);
+
+        Slice shardDelta = Iterables.getOnlyElement(fragments);
+        ShardDeleteDelta shardDeltas = jsonCodec(ShardDeleteDelta.class).fromJson(shardDelta.getBytes());
+        ShardInfo shardInfo = shardDeltas.getNewDeltaDeleteShard().get();
+
+        // check that output file has one row
+        assertEquals(shardInfo.getRowCount(), 1);
+
+        // check that storage file is same as backup file
+        File storageFile = new File(storageService.getStorageFile(shardInfo.getShardUuid()).toString());
+        File backupFile = fileBackupStore.getBackupFile(shardInfo.getShardUuid());
+        assertFileEquals(storageFile, backupFile);
+
+        // verify recorded shard
+        List<RecordedShard> recordedShards = shardRecorder.getShards();
+        assertEquals(recordedShards.size(), 2);
+        assertEquals(recordedShards.get(1).getTransactionId(), TRANSACTION_ID);
+        assertEquals(recordedShards.get(1).getShardUuid(), shardInfo.getShardUuid());
+    }
+
+    @Test
+    public void testRewriterWithDeltaDeleteEmpty()
+    {
+        // delete zero row
+        BitSet rowsToDelete = new BitSet();
+        LongArrayBlockBuilder blockBuilder = new LongArrayBlockBuilder(null, 1);
+        Collection<Slice> fragments = deltaDelete(rowsToDelete, blockBuilder.build(), false);
+
+        assertEquals(ImmutableList.of(), fragments);
+        List<RecordedShard> recordedShards = shardRecorder.getShards();
+        assertEquals(recordedShards.size(), 1);
+    }
+
+    @Test
+    public void testRewriterWithDeltaDeleteAll()
+    {
+        // delete every row
+        BitSet rowsToDelete = new BitSet();
+        rowsToDelete.set(0);
+        rowsToDelete.set(1);
+        rowsToDelete.set(2);
+        LongArrayBlockBuilder blockBuilder = new LongArrayBlockBuilder(null, 1);
+        blockBuilder.writeLong(0).writeLong(1).writeLong(2);
+        Collection<Slice> fragments = deltaDelete(rowsToDelete, blockBuilder.build(), false);
+
+        Slice shardDelta = Iterables.getOnlyElement(fragments);
+        ShardDeleteDelta shardDeltas = jsonCodec(ShardDeleteDelta.class).fromJson(shardDelta.getBytes());
+        assertEquals(shardDeltas.getNewDeltaDeleteShard(), Optional.empty());
+
+        // verify recorded shard
+        List<RecordedShard> recordedShards = shardRecorder.getShards();
+        assertEquals(recordedShards.size(), 1);
+    }
+
+    @Test
+    public void testRewriterWithDeltaDeleteMerge()
+    {
+        // delete every row
+        BitSet rowsToDelete = new BitSet();
+        rowsToDelete.set(0);
+        rowsToDelete.set(1);
+        LongArrayBlockBuilder blockBuilder = new LongArrayBlockBuilder(null, 1);
+        blockBuilder.writeLong(0).writeLong(1);
+
+        Collection<Slice> fragments = deltaDelete(rowsToDelete, blockBuilder.build(), true);
+
+        Slice shardDelta = Iterables.getOnlyElement(fragments);
+        ShardDeleteDelta shardDeltas = jsonCodec(ShardDeleteDelta.class).fromJson(shardDelta.getBytes());
+        assertEquals(shardDeltas.getNewDeltaDeleteShard(), Optional.empty());
+
+        // verify recorded shard
+        List<RecordedShard> recordedShards = shardRecorder.getShards();
+        assertEquals(recordedShards.size(), 2);
+    }
+
+    private Collection<Slice> deltaDelete(BitSet rowsToDelete, Block blockToDelete, boolean oldDeltaDeleteExist)
+    {
+        OrcStorageManager manager = createOrcStorageManager();
+
+        long transactionId = TRANSACTION_ID;
+        List<Long> columnIds = ImmutableList.of(3L, 7L);
+        List<Type> columnTypes = ImmutableList.of(BIGINT, createVarcharType(10));
+
+        // create file with 2 rows
+        StoragePageSink sink = createStoragePageSink(manager, columnIds, columnTypes);
+        List<Page> pages = rowPagesBuilder(columnTypes)
+                .row(123L, "hello")
+                .row(456L, "bye")
+                .row(456L, "test")
+                .build();
+        sink.appendPages(pages);
+        List<ShardInfo> shards = getFutureValue(sink.commit());
+        assertEquals(shardRecorder.getShards().size(), 1);
+
+        List<ShardInfo> deltaDeleteShards = null;
+        if (oldDeltaDeleteExist) {
+            // create file with 2 rows
+            List<Long> deltaColumnIds = ImmutableList.of(1L);
+            List<Type> deltaColumnTypes = ImmutableList.of(BIGINT);
+            StoragePageSink deltaSink = createStoragePageSink(manager, deltaColumnIds, deltaColumnTypes);
+            List<Page> deltaPages = rowPagesBuilder(deltaColumnTypes)
+                    .row(2L)
+                    .build();
+            deltaSink.appendPages(deltaPages);
+            deltaDeleteShards = getFutureValue(deltaSink.commit());
+        }
+
+        // delta delete rewrite
+        Collection<Slice> fragments = manager.rewriteShard(
+                transactionId,
+                OptionalInt.empty(),
+                shards.get(0).getShardUuid(),
+                oldDeltaDeleteExist ? Optional.of(deltaDeleteShards.get(0).getShardUuid()) : Optional.empty(),
+                IntStream.range(0, columnIds.size()).boxed().collect(Collectors.toMap(index -> String.valueOf(columnIds.get(index)), columnTypes::get)),
+                rowsToDelete,
+                blockToDelete,
+                Optional.of(true));
+        return fragments;
     }
 
     public void testWriterRollback()

@@ -30,6 +30,7 @@ import com.facebook.presto.raptor.backup.BackupManager;
 import com.facebook.presto.raptor.backup.BackupStore;
 import com.facebook.presto.raptor.metadata.ColumnInfo;
 import com.facebook.presto.raptor.metadata.ColumnStats;
+import com.facebook.presto.raptor.metadata.ShardDeleteDelta;
 import com.facebook.presto.raptor.metadata.ShardDelta;
 import com.facebook.presto.raptor.metadata.ShardInfo;
 import com.facebook.presto.raptor.metadata.ShardRecorder;
@@ -38,6 +39,9 @@ import com.facebook.presto.spi.ConnectorPageSource;
 import com.facebook.presto.spi.NodeManager;
 import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.PrestoException;
+import com.facebook.presto.spi.block.Block;
+import com.facebook.presto.spi.block.BlockBuilder;
+import com.facebook.presto.spi.block.LongArrayBlockBuilder;
 import com.facebook.presto.spi.predicate.TupleDomain;
 import com.facebook.presto.spi.type.DecimalType;
 import com.facebook.presto.spi.type.NamedTypeSignature;
@@ -51,6 +55,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
 import io.airlift.json.JsonCodec;
 import io.airlift.slice.Slice;
 import io.airlift.slice.Slices;
@@ -116,6 +121,7 @@ import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static io.airlift.json.JsonCodec.jsonCodec;
 import static io.airlift.units.DataSize.Unit.PETABYTE;
 import static java.lang.Math.min;
+import static java.lang.Math.toIntExact;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.CompletableFuture.completedFuture;
@@ -137,6 +143,7 @@ public class OrcStorageManager
     // TODO: do not limit the max size of blocks to read for now; enable the limit when the Hive connector is ready
     public static final DataSize HUGE_MAX_READ_BLOCK_SIZE = new DataSize(1, PETABYTE);
     private static final JsonCodec<ShardDelta> SHARD_DELTA_CODEC = jsonCodec(ShardDelta.class);
+    private static final JsonCodec<ShardDeleteDelta> SHARD_DELETE_DELTA_CODEC = jsonCodec(ShardDeleteDelta.class);
 
     private static final long MAX_ROWS = 1_000_000_000;
     private static final JsonCodec<OrcFileMetadata> METADATA_CODEC = jsonCodec(OrcFileMetadata.class);
@@ -294,7 +301,6 @@ public class OrcStorageManager
                 checkState(allColumnTypes.isPresent());
                 shardRewriter = Optional.of(createShardRewriter(transactionId.getAsLong(), bucketNumber, shardUuid, deltaShardUuid, allColumnTypes.get(), deltaDelete));
             }
-
             return new OrcPageSource(shardRewriter, recordReader, dataSource, columnIds, columnTypes, columnIndexes.build(), shardUuid, bucketNumber, systemMemoryUsage, deltaDelete);
         }
         catch (IOException | RuntimeException e) {
@@ -330,13 +336,13 @@ public class OrcStorageManager
         return new OrcStoragePageSink(transactionId, columnIds, columnTypes, bucketNumber);
     }
 
-    private ShardRewriter createShardRewriter(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Optional<UUID> deltaShardUuid, Map<String, Type> columns, Optional<Boolean> deltaDelete)
+    private ShardRewriter createShardRewriter(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Optional<UUID> oldDeltaDeleteShardUuid, Map<String, Type> columns, Optional<Boolean> deltaDelete)
     {
-        return rowsToDelete -> {
+        return (rowsToDelete, blockToDelete) -> {
             if (rowsToDelete.isEmpty()) {
                 return completedFuture(ImmutableList.of());
             }
-            return supplyAsync(() -> rewriteShard(transactionId, bucketNumber, shardUuid, deltaShardUuid, columns, rowsToDelete, deltaDelete), deletionExecutor);
+            return supplyAsync(() -> rewriteShard(transactionId, bucketNumber, shardUuid, oldDeltaDeleteShardUuid, columns, rowsToDelete, blockToDelete, deltaDelete), deletionExecutor);
         };
     }
 
@@ -427,7 +433,7 @@ public class OrcStorageManager
     }
 
     @VisibleForTesting
-    Collection<Slice> rewriteShard(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Optional<UUID> deltaShardUuid, Map<String, Type> columns, BitSet rowsToDelete, Optional<Boolean> deltaDelete)
+    Collection<Slice> rewriteShard(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Optional<UUID> oldDeltaDeleteShardUuid, Map<String, Type> columns, BitSet rowsToDelete, Block blockToDelete, Optional<Boolean> deltaDelete)
     {
         if (rowsToDelete.isEmpty()) {
             return ImmutableList.of();
@@ -436,6 +442,10 @@ public class OrcStorageManager
         UUID newShardUuid = UUID.randomUUID();
         Path input = storageService.getStorageFile(shardUuid);
         Path output = storageService.getStagingFile(newShardUuid);
+
+        if (deltaDelete.isPresent() && deltaDelete.get()) {
+            return writeDeltaDeleteFile(shardUuid, oldDeltaDeleteShardUuid, transactionId, blockToDelete, bucketNumber);
+        }
 
         OrcFileInfo info = rewriteFile(columns, input, output, rowsToDelete);
         long rowCount = info.getRowCount();
@@ -457,6 +467,130 @@ public class OrcStorageManager
         writeShard(newShardUuid);
 
         return shardDelta(shardUuid, Optional.of(shard));
+    }
+
+    private Collection<Slice> writeDeltaDeleteFile(UUID oldShardUuid, Optional<UUID> oldDeltaDeleteShardUuid, long transactionId, Block blockToDelete, OptionalInt bucketNumber)
+    {
+        // blockToDelete is LongArrayBlock
+        List<Long> columnIds = new ArrayList<>();
+        List<Type> columnTypes = new ArrayList<>();
+        columnIds.add(0L);
+        columnTypes.add(BIGINT);
+
+        // todo one block can't hold one orcfile
+        Block mergedBlock;
+        // At this point, blockToDelete couldn't be empty
+        if (!oldDeltaDeleteShardUuid.isPresent()) {
+            mergedBlock = blockToDelete;
+        }
+        else {
+            Block existingDeltaDeleteBlock = readExistingDeltaBlock(oldDeltaDeleteShardUuid.get());
+            mergedBlock = mergeBlock(existingDeltaDeleteBlock, blockToDelete);
+        }
+
+        if (mergedBlock.getPositionCount() == getRowCount(oldShardUuid)) {
+            // Delete original file
+            return shardDeleteDelta(oldShardUuid, oldDeltaDeleteShardUuid, Optional.empty());
+        }
+
+        StoragePageSink pageSink = createStoragePageSink(transactionId, bucketNumber, columnIds, columnTypes, true);
+        pageSink.appendPages(ImmutableList.of(new Page(mergedBlock)));
+        List<ShardInfo> shardInfos = getFutureValue(pageSink.commit());
+        // Guaranteed that shardInfos only has one element since we only call commit one time
+        ShardInfo newDeltaDeleteShard = Iterables.getOnlyElement(shardInfos);
+        return shardDeleteDelta(oldShardUuid, oldDeltaDeleteShardUuid, Optional.of(newDeltaDeleteShard));
+    }
+
+    private int getRowCount(UUID oldShardUuid)
+    {
+        OrcDataSource dataSource = openShard(oldShardUuid, defaultReaderAttributes);
+        try {
+            OrcReader reader = new OrcReader(dataSource, ORC, defaultReaderAttributes.getMaxMergeDistance(), defaultReaderAttributes.getTinyStripeThreshold(), HUGE_MAX_READ_BLOCK_SIZE);
+            if (reader.getFooter().getNumberOfRows() >= Integer.MAX_VALUE) {
+                throw new IOException("File has too many rows");
+            }
+            return toIntExact(reader.getFooter().getNumberOfRows());
+        }
+        catch (Exception e) {
+            throw new PrestoException(RAPTOR_ERROR, "Failed to read file: " + oldShardUuid, e);
+        }
+    }
+
+    private Block readExistingDeltaBlock(UUID deltaShardUuid)
+    {
+        OrcDataSource dataSource = openShard(deltaShardUuid, defaultReaderAttributes);
+        AggregatedMemoryContext systemMemoryUsage = newSimpleAggregatedMemoryContext();
+        try {
+            OrcReader reader = new OrcReader(
+                    dataSource,
+                    ORC,
+                    defaultReaderAttributes.getMaxMergeDistance(),
+                    defaultReaderAttributes.getTinyStripeThreshold(),
+                    HUGE_MAX_READ_BLOCK_SIZE);
+            if (reader.getFooter().getNumberOfRows() >= Integer.MAX_VALUE) {
+                throw new IOException("File has too many rows");
+            }
+            ImmutableMap.Builder<Integer, Type> includedColumns = ImmutableMap.builder();
+            includedColumns.put(0, BIGINT);
+            OrcBatchRecordReader recordReader = reader.createBatchRecordReader(
+                    includedColumns.build(),
+                    OrcPredicate.TRUE,
+                    DEFAULT_STORAGE_TIMEZONE,
+                    systemMemoryUsage,
+                    INITIAL_BATCH_SIZE);
+            BlockBuilder blockBuilder = new LongArrayBlockBuilder(null, toIntExact(reader.getFooter().getNumberOfRows()));
+            while (recordReader.nextBatch() > 0) {
+                Block block = recordReader.readBlock(BIGINT, 0);
+                for (int i = 0; i < block.getPositionCount(); i++) {
+                    blockBuilder.writeLong(block.getLong(i));
+                }
+            }
+            return blockBuilder.build();
+        }
+        catch (Exception e) {
+            throw new PrestoException(RAPTOR_ERROR, "Failed to read file: " + deltaShardUuid, e);
+        }
+    }
+
+    private Block mergeBlock(Block existingDeltaDeleteBlock, Block blockToDelete)
+    {
+        BlockBuilder blockBuilder = new LongArrayBlockBuilder(null, existingDeltaDeleteBlock.getPositionCount() + blockToDelete.getPositionCount());
+        int i = 0;
+        int j = 0;
+        while (i < blockToDelete.getPositionCount() && j < existingDeltaDeleteBlock.getPositionCount()) {
+            if (blockToDelete.getLong(i) < existingDeltaDeleteBlock.getLong(j)) {
+                blockBuilder.writeLong(blockToDelete.getLong(i));
+                i++;
+            }
+            else if (blockToDelete.getLong(i) == existingDeltaDeleteBlock.getLong(j)) {
+                blockBuilder.writeLong(blockToDelete.getLong(i));
+                i++;
+                j++;
+            }
+            else {
+                blockBuilder.writeLong(existingDeltaDeleteBlock.getLong(j));
+                j++;
+            }
+        }
+        if (i < blockToDelete.getPositionCount()) {
+            while (i < blockToDelete.getPositionCount()) {
+                blockBuilder.writeLong(blockToDelete.getLong(i));
+                i++;
+            }
+        }
+        else {
+            while (j < existingDeltaDeleteBlock.getPositionCount()) {
+                blockBuilder.writeLong(existingDeltaDeleteBlock.getLong(j));
+                j++;
+            }
+        }
+        return blockBuilder.build();
+    }
+
+    private Collection<Slice> shardDeleteDelta(UUID oldShardUuid, Optional<UUID> oldDeltaDeleteShard, Optional<ShardInfo> newDeltaDeleteShard)
+    {
+        return ImmutableList.of(Slices.wrappedBuffer(SHARD_DELETE_DELTA_CODEC.toJsonBytes(
+                new ShardDeleteDelta(oldShardUuid, oldDeltaDeleteShard, newDeltaDeleteShard))));
     }
 
     private static Collection<Slice> shardDelta(UUID oldShardUuid, Optional<ShardInfo> shardInfo)
