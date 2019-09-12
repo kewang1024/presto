@@ -792,6 +792,13 @@ public class TestRaptorMetadata
     }
 
     @Test
+    public void testTransactionDeltaDelete()
+    {
+        // creating a table allocates a transaction
+        // todo: haven't stared the shards and other metadata table operation
+    }
+
+    @Test
     public void testTransactionAbort()
     {
         // start table creation

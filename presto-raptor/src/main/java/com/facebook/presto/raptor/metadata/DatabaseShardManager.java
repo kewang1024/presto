@@ -33,6 +33,7 @@ import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.UncheckedExecutionException;
 import io.airlift.log.Logger;
 import io.airlift.units.Duration;
+import javafx.util.Pair;
 import org.h2.jdbc.JdbcConnection;
 import org.skife.jdbi.v2.Handle;
 import org.skife.jdbi.v2.IDBI;
@@ -324,6 +325,72 @@ public class DatabaseShardManager
             if (!oldShardUuids.isEmpty() || !newShards.isEmpty()) {
                 MetadataDao metadata = handle.attach(MetadataDao.class);
                 metadata.updateTableStats(tableId, shardCount, rowCount, compressedSize, uncompressedSize);
+                updateTime.ifPresent(time -> metadata.updateTableVersion(tableId, time));
+            }
+        });
+    }
+
+    public void updateDeltaShardUuids(long transactionId, long tableId, List<ColumnInfo> columns, Map<UUID, Pair<Optional<UUID>, Optional<ShardInfo>>> shardMap, OptionalLong updateTime)
+    {
+        runCommit(transactionId, (handle) -> {
+            lockTable(handle, tableId);
+
+            if (!updateTime.isPresent() && handle.attach(MetadataDao.class).isMaintenanceBlockedLocked(tableId)) {
+                throw new PrestoException(TRANSACTION_CONFLICT, "Maintenance is blocked for table");
+            }
+
+            Set<UUID> oldDeltaDeleteUuids = new HashSet<>();
+            Set<ShardInfo> newDeltaDeleteInfos = new HashSet<>();
+
+            Connection connection = handle.getConnection();
+            try (IndexUpdater indexUpdater = new IndexUpdater(connection, shardIndexTable(tableId))) {
+                shardMap.entrySet().stream().forEach(entry -> {
+                    // Update index table
+                    // Delete if deltaShard is empty
+                    if (entry.getValue().getValue().isPresent()) {
+                        indexUpdater.update(entry.getKey(), entry.getValue().getValue().get().getShardUuid());
+                    }
+                    else {
+                        indexUpdater.delete(entry.getKey());
+                    }
+
+                    if (entry.getValue().getKey().isPresent()) {
+                        if (entry.getValue().getKey().isPresent()) {
+                            oldDeltaDeleteUuids.add(entry.getValue().getKey().get());
+                        }
+                        if (entry.getValue().getValue().isPresent()) {
+                            newDeltaDeleteInfos.add(entry.getValue().getValue().get());
+                        }
+                    }
+                });
+                indexUpdater.execute();
+            }
+            // TODO
+            // Insert into shards and shard_nodes
+
+            // TODO
+            // 1. Remove from shards and shard_nodes
+            // 2. Update metadata
+            ShardStats newStats = shardStats(newDeltaDeleteInfos);
+            long rowCount = newStats.getRowCount();
+            long compressedSize = newStats.getCompressedSize();
+            long uncompressedSize = newStats.getUncompressedSize();
+
+            for (List<UUID> uuids : partition(oldDeltaDeleteUuids, 1000)) {
+                // Remove from shards and shard_nodes
+                /*
+                ShardStats stats = deleteShardsAndIndex(tableId, ImmutableSet.copyOf(uuids), handle, true);
+                rowCount -= stats.getRowCount();
+                compressedSize -= stats.getCompressedSize();
+                uncompressedSize -= stats.getUncompressedSize();
+                 */
+            }
+            long shardCountDelta = oldDeltaDeleteUuids.size() - newDeltaDeleteInfos.size();
+
+            if (!oldDeltaDeleteUuids.isEmpty() || !newDeltaDeleteInfos.isEmpty()) {
+                MetadataDao metadata = handle.attach(MetadataDao.class);
+                // Update metadata
+                metadata.updateTableStats(tableId, shardCountDelta, rowCount, compressedSize, uncompressedSize);
                 updateTime.ifPresent(time -> metadata.updateTableVersion(tableId, time));
             }
         });

@@ -35,6 +35,7 @@ import com.google.common.io.Files;
 import io.airlift.slice.Slice;
 import io.airlift.testing.TestingTicker;
 import io.airlift.units.Duration;
+import javafx.util.Pair;
 import org.skife.jdbi.v2.DBI;
 import org.skife.jdbi.v2.Handle;
 import org.skife.jdbi.v2.IDBI;
@@ -359,6 +360,103 @@ public class TestDatabaseShardManager
         catch (PrestoException e) {
             assertEquals(e.getErrorCode(), TRANSACTION_CONFLICT.toErrorCode());
         }
+    }
+
+    @Test
+    public void testUpdateShardUuids()
+    {
+        long tableId = createTable("test");
+        List<ColumnInfo> columns = ImmutableList.of(new ColumnInfo(1, BIGINT));
+        List<String> nodes = ImmutableList.of("node1", "node2", "node3");
+        List<UUID> originalUuids = ImmutableList.of(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+
+        List<ShardInfo> oldShards = ImmutableList.<ShardInfo>builder()
+                .add(shardInfo(originalUuids.get(0), nodes.get(0)))
+                .add(shardInfo(originalUuids.get(1), nodes.get(1)))
+                .add(shardInfo(originalUuids.get(2), nodes.get(2)))
+                .build();
+
+        shardManager.createTable(tableId, columns, false, OptionalLong.empty());
+
+        long transactionId = shardManager.beginTransaction();
+        shardManager.commitShards(transactionId, tableId, columns, oldShards, Optional.empty(), 0);
+
+        List<UUID> newUuids = ImmutableList.of(UUID.randomUUID());
+        List<ShardInfo> newShards = ImmutableList.<ShardInfo>builder().add(shardInfo(newUuids.get(0), nodes.get(0))).build();
+
+        Map<UUID, Pair<Optional<UUID>, Optional<ShardInfo>>> shardMap = new HashMap<>();
+        shardMap.put(originalUuids.get(0), new Pair(Optional.empty(), Optional.of(newShards.get(0))));
+
+        transactionId = shardManager.beginTransaction();
+        shardManager.updateDeltaShardUuids(transactionId, tableId, columns, shardMap, OptionalLong.of(0));
+
+        Set<ShardMetadata> shardMetadata = shardManager.getNodeShards(nodes.get(0));
+        Set<UUID> actualUuids = shardMetadata.stream().map(ShardMetadata::getShardUuid).collect(toSet());
+        Set<UUID> expectedUuids = new HashSet<>();
+        // 1.todo: haven't stared the shards and other metadata table operation
+        //expectedUuids.add(newUuids.get(0));
+        expectedUuids.add(originalUuids.get(0));
+        assertEquals(actualUuids, ImmutableSet.copyOf(expectedUuids));
+
+        // 2.check that shards are replaced in index table as well
+        Set<BucketShards> shardNodes = ImmutableSet.copyOf(shardManager.getShardNodes(tableId, TupleDomain.all()));
+        Set<BucketShards> expectedshardNodes = ImmutableSet.of(
+                new BucketShards(OptionalInt.empty(), ImmutableSet.of(new ShardNodes(originalUuids.get(0), newUuids.get(0), ImmutableSet.of(nodes.get(0))))),
+                new BucketShards(OptionalInt.empty(), ImmutableSet.of(new ShardNodes(originalUuids.get(1), null, ImmutableSet.of(nodes.get(1))))),
+                new BucketShards(OptionalInt.empty(), ImmutableSet.of(new ShardNodes(originalUuids.get(2), null, ImmutableSet.of(nodes.get(2))))));
+
+        assertEquals(shardNodes, expectedshardNodes);
+
+        // 3.todo
+        // verify that conflicting updates are handled
+    }
+
+    @Test
+    public void testUpdateShardUuidsDeleteFile()
+    {
+        long tableId = createTable("test");
+        List<ColumnInfo> columns = ImmutableList.of(new ColumnInfo(1, BIGINT));
+        List<String> nodes = ImmutableList.of("node1", "node2", "node3");
+        List<UUID> originalUuids = ImmutableList.of(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+
+        List<ShardInfo> oldShards = ImmutableList.<ShardInfo>builder()
+                .add(shardInfo(originalUuids.get(0), nodes.get(0)))
+                .add(shardInfo(originalUuids.get(1), nodes.get(1)))
+                .add(shardInfo(originalUuids.get(2), nodes.get(2)))
+                .build();
+
+        shardManager.createTable(tableId, columns, false, OptionalLong.empty());
+
+        long transactionId = shardManager.beginTransaction();
+        shardManager.commitShards(transactionId, tableId, columns, oldShards, Optional.empty(), 0);
+
+        List<UUID> newUuids = ImmutableList.of(UUID.randomUUID());
+        List<ShardInfo> newShards = ImmutableList.<ShardInfo>builder().add(shardInfo(newUuids.get(0), nodes.get(0))).build();
+
+        Map<UUID, Pair<Optional<UUID>, Optional<ShardInfo>>> shardMap = new HashMap<>();
+        shardMap.put(originalUuids.get(0), new Pair(Optional.empty(), Optional.empty()));
+
+        transactionId = shardManager.beginTransaction();
+        shardManager.updateDeltaShardUuids(transactionId, tableId, columns, shardMap, OptionalLong.of(0));
+
+        Set<ShardMetadata> shardMetadata = shardManager.getNodeShards(nodes.get(0));
+        Set<UUID> actualUuids = shardMetadata.stream().map(ShardMetadata::getShardUuid).collect(toSet());
+        Set<UUID> expectedUuids = new HashSet<>();
+        // 1.todo: haven't stared the shards and other metadata table operation
+        //expectedUuids.add(newUuids.get(0));
+        expectedUuids.add(originalUuids.get(0));
+        assertEquals(actualUuids, ImmutableSet.copyOf(expectedUuids));
+
+        // 2.check that shards are replaced in index table as well
+        Set<BucketShards> shardNodes = ImmutableSet.copyOf(shardManager.getShardNodes(tableId, TupleDomain.all()));
+        Set<BucketShards> expectedshardNodes = ImmutableSet.of(
+                new BucketShards(OptionalInt.empty(), ImmutableSet.of(new ShardNodes(originalUuids.get(1), null, ImmutableSet.of(nodes.get(1))))),
+                new BucketShards(OptionalInt.empty(), ImmutableSet.of(new ShardNodes(originalUuids.get(2), null, ImmutableSet.of(nodes.get(2))))));
+
+        assertEquals(shardNodes, expectedshardNodes);
+
+        // 3.todo
+        // verify that conflicting updates are handled
     }
 
     @Test
