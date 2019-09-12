@@ -16,13 +16,15 @@ package com.facebook.presto.raptor.storage.organization;
 import com.facebook.presto.raptor.metadata.Table;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import io.airlift.units.DataSize;
 import org.testng.annotations.Test;
 
 import java.time.Duration;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
@@ -57,7 +59,7 @@ public class TestCompactionSetCreator
 
         Set<OrganizationSet> compactionSets = compactionSetCreator.createCompactionSets(tableInfo, inputShards);
         assertEquals(compactionSets.size(), 1);
-        assertEquals(getOnlyElement(compactionSets).getShards(), extractIndexes(inputShards, 0, 1, 2));
+        assertEquals(getOnlyElement(compactionSets).getShardsMap(), extractIndexes(inputShards, 0, 1, 2));
     }
 
     @Test
@@ -71,11 +73,11 @@ public class TestCompactionSetCreator
 
         Set<OrganizationSet> compactionSets = compactionSetCreator.createCompactionSets(tableInfo, inputShards);
 
-        Set<UUID> actual = new HashSet<>();
+        Map<UUID, Optional<UUID>> actual = new HashMap<>();
         for (OrganizationSet set : compactionSets) {
-            actual.addAll(set.getShards());
+            actual.putAll(set.getShardsMap());
         }
-        assertTrue(extractIndexes(inputShards, 0, 1, 2).containsAll(actual));
+        assertTrue(extractIndexes(inputShards, 0, 1, 2).keySet().containsAll(actual.keySet()));
     }
 
     @Test
@@ -89,12 +91,12 @@ public class TestCompactionSetCreator
 
         Set<OrganizationSet> compactionSets = compactionSetCreator.createCompactionSets(tableInfo, inputShards);
 
-        Set<UUID> actual = new HashSet<>();
+        Map<UUID, Optional<UUID>> actual = new HashMap<>();
         for (OrganizationSet set : compactionSets) {
-            actual.addAll(set.getShards());
+            actual.putAll(set.getShardsMap());
         }
 
-        assertTrue(extractIndexes(inputShards, 0, 2, 3).containsAll(actual));
+        assertTrue(extractIndexes(inputShards, 0, 2, 3).keySet().containsAll(actual.keySet()));
     }
 
     @Test
@@ -196,11 +198,11 @@ public class TestCompactionSetCreator
         assertEquals(actual, expected);
     }
 
-    static Set<UUID> extractIndexes(List<ShardIndexInfo> inputShards, int... indexes)
+    static Map<UUID, Optional<UUID>> extractIndexes(List<ShardIndexInfo> inputShards, int... indexes)
     {
-        ImmutableSet.Builder<UUID> builder = ImmutableSet.builder();
+        ImmutableMap.Builder<UUID, Optional<UUID>> builder = ImmutableMap.builder();
         for (int index : indexes) {
-            builder.add(inputShards.get(index).getShardUuid());
+            builder.put(inputShards.get(index).getShardUuid(), inputShards.get(index).getDeltaUuid());
         }
         return builder.build();
     }
@@ -238,6 +240,8 @@ public class TestCompactionSetCreator
                 1,
                 OptionalInt.empty(),
                 UUID.randomUUID(),
+                false,
+                Optional.empty(),
                 rows,
                 size,
                 Optional.empty(),
@@ -255,6 +259,8 @@ public class TestCompactionSetCreator
                 1,
                 OptionalInt.of(bucketNumber),
                 UUID.randomUUID(),
+                false,
+                Optional.empty(),
                 1,
                 1,
                 Optional.empty(),
@@ -268,6 +274,8 @@ public class TestCompactionSetCreator
                     1,
                     bucketNumber,
                     UUID.randomUUID(),
+                    false,
+                    Optional.empty(),
                     1,
                     1,
                     Optional.empty(),
@@ -277,6 +285,8 @@ public class TestCompactionSetCreator
                 1,
                 bucketNumber,
                 UUID.randomUUID(),
+                false,
+                Optional.empty(),
                 1,
                 1,
                 Optional.empty(),

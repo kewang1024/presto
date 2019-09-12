@@ -201,6 +201,7 @@ public class ShardCompactionManager
         Set<ShardMetadata> filteredShards = tableShards.stream()
                 .filter(this::needsCompaction)
                 .filter(shard -> !organizer.inProgress(shard.getShardUuid()))
+                .filter(shard -> !shard.isDelta())
                 .collect(toSet());
 
         Collection<ShardIndexInfo> shardIndexInfos = getOrganizationEligibleShards(dbi, metadataDao, tableInfo, filteredShards, false);

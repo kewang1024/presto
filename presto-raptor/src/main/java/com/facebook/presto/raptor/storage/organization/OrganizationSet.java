@@ -13,7 +13,9 @@
  */
 package com.facebook.presto.raptor.storage.organization;
 
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
@@ -24,13 +26,13 @@ import static java.util.Objects.requireNonNull;
 public class OrganizationSet
 {
     private final long tableId;
-    private final Set<UUID> shards;
+    private final Map<UUID, Optional<UUID>> shardsMap;
     private final OptionalInt bucketNumber;
 
-    public OrganizationSet(long tableId, Set<UUID> shards, OptionalInt bucketNumber)
+    public OrganizationSet(long tableId, Map<UUID, Optional<UUID>> shardsMap, OptionalInt bucketNumber)
     {
         this.tableId = tableId;
-        this.shards = requireNonNull(shards, "shards is null");
+        this.shardsMap = requireNonNull(shardsMap, "shards is null");
         this.bucketNumber = requireNonNull(bucketNumber, "bucketNumber is null");
     }
 
@@ -39,9 +41,14 @@ public class OrganizationSet
         return tableId;
     }
 
+    public Map<UUID, Optional<UUID>> getShardsMap()
+    {
+        return shardsMap;
+    }
+
     public Set<UUID> getShards()
     {
-        return shards;
+        return shardsMap.keySet();
     }
 
     public OptionalInt getBucketNumber()
@@ -60,14 +67,14 @@ public class OrganizationSet
         }
         OrganizationSet that = (OrganizationSet) o;
         return tableId == that.tableId &&
-                Objects.equals(shards, that.shards) &&
+                Objects.equals(shardsMap, that.shardsMap) &&
                 Objects.equals(bucketNumber, that.bucketNumber);
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hash(tableId, shards, bucketNumber);
+        return Objects.hash(tableId, shardsMap, bucketNumber);
     }
 
     @Override
@@ -75,7 +82,7 @@ public class OrganizationSet
     {
         return toStringHelper(this)
                 .add("tableId", tableId)
-                .add("shards", shards)
+                .add("shards", shardsMap)
                 .add("bucketNumber", bucketNumber.isPresent() ? bucketNumber.getAsInt() : null)
                 .omitNullValues()
                 .toString();
