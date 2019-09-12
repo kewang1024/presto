@@ -301,7 +301,8 @@ public class OrcStorageManager
                 checkState(allColumnTypes.isPresent());
                 shardRewriter = Optional.of(createShardRewriter(transactionId.getAsLong(), bucketNumber, shardUuid, deltaShardUuid, allColumnTypes.get(), deltaDelete));
             }
-            return new OrcPageSource(shardRewriter, recordReader, dataSource, columnIds, columnTypes, columnIndexes.build(), shardUuid, bucketNumber, systemMemoryUsage, deltaDelete);
+            Optional<BitSet> rowsDeleted = getRowsFromUuid(deltaShardUuid);
+            return new OrcPageSource(shardRewriter, recordReader, dataSource, columnIds, columnTypes, columnIndexes.build(), shardUuid, bucketNumber, systemMemoryUsage, rowsDeleted, deltaDelete);
         }
         catch (IOException | RuntimeException e) {
             closeQuietly(dataSource);
@@ -311,6 +312,21 @@ public class OrcStorageManager
             closeQuietly(dataSource);
             throw t;
         }
+    }
+
+    private Optional<BitSet> getRowsFromUuid(Optional<UUID> deltaShardUuid)
+    {
+        if (!deltaShardUuid.isPresent()) {
+            return Optional.empty();
+        }
+        Block existDeltaBlock = readExistingDeltaBlock(deltaShardUuid.get());
+        BitSet bitSet = new BitSet(existDeltaBlock.getPositionCount());
+
+        for (int i = 0; i < existDeltaBlock.getPositionCount(); i++) {
+            long rowId = BIGINT.getLong(existDeltaBlock, i);
+            bitSet.set(toIntExact(rowId));
+        }
+        return Optional.of(bitSet);
     }
 
     private static int toSpecialIndex(long columnId)

@@ -224,7 +224,7 @@ public final class OrcPageFileRewriter
         return new OrcFileInfo(rowCount, uncompressedSize);
     }
 
-    private static Page maskedPage(Block[] blocks, BitSet rowsToDelete, int start, int count)
+    public static Page maskedPage(Block[] blocks, BitSet rowsToDelete, int start, int count)
     {
         int[] ids = new int[count];
         int size = 0;

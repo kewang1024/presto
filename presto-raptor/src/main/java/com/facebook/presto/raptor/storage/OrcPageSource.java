@@ -40,6 +40,7 @@ import java.util.concurrent.CompletableFuture;
 
 import static com.facebook.presto.orc.OrcReader.MAX_BATCH_SIZE;
 import static com.facebook.presto.raptor.RaptorErrorCode.RAPTOR_ERROR;
+import static com.facebook.presto.raptor.storage.OrcPageFileRewriter.maskedPage;
 import static com.facebook.presto.spi.predicate.Utils.nativeValueToBlock;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.google.common.base.MoreObjects.toStringHelper;
@@ -62,6 +63,7 @@ public class OrcPageSource
     private final OrcBatchRecordReader recordReader;
     private final OrcDataSource orcDataSource;
 
+    private final Optional<BitSet> rowsDeleted;
     private final BitSet rowsToDelete;
     // todo one block can't hold one orcfile
     BlockBuilder blockBuilder = new LongArrayBlockBuilder(null, 1000);
@@ -88,6 +90,7 @@ public class OrcPageSource
             UUID shardUuid,
             OptionalInt bucketNumber,
             AggregatedMemoryContext systemMemoryContext,
+            Optional<BitSet> rowsDeleted,
             Optional<Boolean> deltaDelete)
     {
         this.shardRewriter = requireNonNull(shardRewriter, "shardRewriter is null");
@@ -95,6 +98,7 @@ public class OrcPageSource
         this.orcDataSource = requireNonNull(orcDataSource, "orcDataSource is null");
 
         this.rowsToDelete = new BitSet(toIntExact(recordReader.getFileRowCount()));
+        this.rowsDeleted = rowsDeleted;
 
         checkArgument(columnIds.size() == columnTypes.size(), "ids and types mismatch");
         checkArgument(columnIds.size() == columnIndexes.size(), "ids and indexes mismatch");
@@ -180,6 +184,10 @@ public class OrcPageSource
                 else {
                     blocks[fieldId] = new LazyBlock(batchSize, new OrcBlockLoader(columnIndexes[fieldId], type));
                 }
+            }
+            if (rowsDeleted.isPresent()) {
+                int row = toIntExact(filePosition);
+                return maskedPage(blocks, rowsDeleted.get(), row, batchSize);
             }
 
             return new Page(batchSize, blocks);
