@@ -22,6 +22,7 @@ import com.facebook.presto.orc.OrcPredicate;
 import com.facebook.presto.orc.OrcReader;
 import com.facebook.presto.orc.OrcReaderOptions;
 import com.facebook.presto.orc.OrcWriterStats;
+import com.facebook.presto.orc.StorageStripeMetadataSource;
 import com.facebook.presto.orc.StripeMetadataSource;
 import com.facebook.presto.orc.TupleDomainOrcPredicate;
 import com.facebook.presto.orc.TupleDomainOrcPredicate.ColumnReference;
@@ -43,6 +44,7 @@ import com.facebook.presto.spi.ConnectorPageSource;
 import com.facebook.presto.spi.NodeManager;
 import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.PrestoException;
+import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.predicate.TupleDomain;
 import com.facebook.presto.spi.type.ArrayType;
 import com.facebook.presto.spi.type.DecimalType;
@@ -125,6 +127,7 @@ import static com.google.common.base.Throwables.throwIfInstanceOf;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.airlift.units.DataSize.Unit.PETABYTE;
 import static java.lang.Math.min;
+import static java.lang.Math.toIntExact;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.CompletableFuture.completedFuture;
@@ -328,7 +331,20 @@ public class OrcStorageManager
                 checkState(allColumnTypes.isPresent());
                 shardRewriter = Optional.of(createShardRewriter(fileSystem, transactionId.getAsLong(), bucketNumber, shardUuid, allColumnTypes.get()));
             }
-            return new OrcPageSource(shardRewriter, recordReader, dataSource, columnIds, columnTypes, columnIndexes.build(), shardUuid, tableSupportsDeltaDelete, bucketNumber, systemMemoryUsage);
+            return new OrcPageSource(
+                    this,
+                    fileSystem,
+                    shardRewriter,
+                    recordReader,
+                    dataSource,
+                    columnIds,
+                    columnTypes,
+                    columnIndexes.build(),
+                    shardUuid,
+                    tableSupportsDeltaDelete,
+                    bucketNumber,
+                    systemMemoryUsage,
+                    deltaShardUuid);
         }
         catch (IOException | RuntimeException e) {
             closeQuietly(dataSource);
@@ -336,6 +352,51 @@ public class OrcStorageManager
         }
         catch (Throwable t) {
             closeQuietly(dataSource);
+            throw t;
+        }
+    }
+
+    Optional<BitSet> getRowsFromUuid(FileSystem fileSystem, Optional<UUID> deltaShardUuid)
+    {
+        if (!deltaShardUuid.isPresent()) {
+            return Optional.empty();
+        }
+        try (OrcDataSource dataSource = openShard(fileSystem, deltaShardUuid.get(), defaultReaderAttributes)) {
+            AggregatedMemoryContext systemMemoryUsage = newSimpleAggregatedMemoryContext();
+            OrcReader reader = new OrcReader(
+                    dataSource,
+                    ORC,
+                    orcFileTailSource,
+                    new StorageStripeMetadataSource(),
+                    new OrcReaderOptions(
+                            defaultReaderAttributes.getMaxMergeDistance(),
+                            defaultReaderAttributes.getTinyStripeThreshold(),
+                            HUGE_MAX_READ_BLOCK_SIZE,
+                            false));
+            if (reader.getFooter().getNumberOfRows() >= Integer.MAX_VALUE) {
+                throw new IOException("File has too many rows");
+            }
+            ImmutableMap.Builder<Integer, Type> includedColumns = ImmutableMap.builder();
+            includedColumns.put(0, BIGINT);
+            OrcBatchRecordReader recordReader = reader.createBatchRecordReader(
+                    includedColumns.build(),
+                    OrcPredicate.TRUE,
+                    DEFAULT_STORAGE_TIMEZONE,
+                    systemMemoryUsage,
+                    INITIAL_BATCH_SIZE);
+            BitSet bitSet = new BitSet();
+            while (recordReader.nextBatch() > 0) {
+                Block block = recordReader.readBlock(0);
+                for (int i = 0; i < block.getPositionCount(); i++) {
+                    bitSet.set(toIntExact(block.getLong(i)));
+                }
+            }
+            return Optional.of(bitSet);
+        }
+        catch (IOException | RuntimeException e) {
+            throw new PrestoException(RAPTOR_ERROR, "Failed to read file: " + deltaShardUuid, e);
+        }
+        catch (Throwable t) {
             throw t;
         }
     }
