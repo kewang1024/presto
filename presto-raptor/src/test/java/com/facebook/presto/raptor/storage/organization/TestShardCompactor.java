@@ -264,7 +264,7 @@ public class TestShardCompactor
 
     private ConnectorPageSource getPageSource(StorageManager storageManager, List<Long> columnIds, List<Type> columnTypes, UUID uuid)
     {
-        return storageManager.getPageSource(uuid, Optional.empty(), OptionalInt.empty(), columnIds, columnTypes, TupleDomain.all(), READER_ATTRIBUTES, Optional.empty());
+        return storageManager.getPageSource(uuid, Optional.empty(), Optional.empty(), OptionalInt.empty(), columnIds, columnTypes, TupleDomain.all(), READER_ATTRIBUTES);
     }
 
     private static List<ShardInfo> createSortedShards(StorageManager storageManager, List<Long> columnIds, List<Type> columnTypes, List<Integer> sortChannels, List<SortOrder> sortOrders, int shardCount)

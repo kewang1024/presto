@@ -39,7 +39,6 @@ import javax.annotation.PreDestroy;
 import javax.annotation.concurrent.GuardedBy;
 import javax.inject.Inject;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -256,11 +255,11 @@ public class RaptorSplitManager
                     connectorId,
                     shardId,
                     deltaShardUuid == null ? Optional.empty() : Optional.of(ImmutableMap.of(shardId, deltaShardUuid)),
+                    Optional.of(deltaDeleteEnabled),
                     addresses,
                     effectivePredicate,
                     transactionId,
-                    columnTypes,
-                    Optional.of(deltaDeleteEnabled));
+                    columnTypes);
         }
 
         private ConnectorSplit createBucketSplit(int bucketNumber, Set<ShardNodes> shards)
@@ -290,12 +289,12 @@ public class RaptorSplitManager
                     connectorId,
                     shardUuids,
                     shardMapBuilder.build().size() == 0 ? Optional.empty() : Optional.of(shardMapBuilder.build()),
+                    Optional.of(deltaDeleteEnabled),
                     bucketNumber,
                     address,
                     effectivePredicate,
                     transactionId,
-                    columnTypes,
-                    Optional.of(deltaDeleteEnabled));
+                    columnTypes);
         }
     }
 }

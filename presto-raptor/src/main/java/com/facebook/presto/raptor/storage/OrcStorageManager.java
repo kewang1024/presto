@@ -256,14 +256,14 @@ public class OrcStorageManager
     public ConnectorPageSource getPageSource(
             UUID shardUuid,
             Optional<UUID> deltaShardUuid,
+            Optional<Boolean> deltaDeleteEnabled,
             OptionalInt bucketNumber,
             List<Long> columnIds,
             List<Type> columnTypes,
             TupleDomain<RaptorColumnHandle> effectivePredicate,
             ReaderAttributes readerAttributes,
             OptionalLong transactionId,
-            Optional<Map<String, Type>> allColumnTypes,
-            Optional<Boolean> deltaDelete)
+            Optional<Map<String, Type>> allColumnTypes)
     {
         OrcDataSource dataSource = openShard(shardUuid, readerAttributes);
 
@@ -299,10 +299,10 @@ public class OrcStorageManager
             Optional<ShardRewriter> shardRewriter = Optional.empty();
             if (transactionId.isPresent()) {
                 checkState(allColumnTypes.isPresent());
-                shardRewriter = Optional.of(createShardRewriter(transactionId.getAsLong(), bucketNumber, shardUuid, deltaShardUuid, allColumnTypes.get(), deltaDelete));
+                shardRewriter = Optional.of(createShardRewriter(transactionId.getAsLong(), bucketNumber, shardUuid, deltaShardUuid, deltaDeleteEnabled, allColumnTypes.get()));
             }
             Optional<BitSet> rowsDeleted = getRowsFromUuid(deltaShardUuid);
-            return new OrcPageSource(shardRewriter, recordReader, dataSource, columnIds, columnTypes, columnIndexes.build(), shardUuid, bucketNumber, systemMemoryUsage, rowsDeleted, deltaDelete);
+            return new OrcPageSource(shardRewriter, recordReader, dataSource, columnIds, columnTypes, columnIndexes.build(), shardUuid, rowsDeleted, bucketNumber, systemMemoryUsage);
         }
         catch (IOException | RuntimeException e) {
             closeQuietly(dataSource);
@@ -352,13 +352,13 @@ public class OrcStorageManager
         return new OrcStoragePageSink(transactionId, columnIds, columnTypes, bucketNumber);
     }
 
-    private ShardRewriter createShardRewriter(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Optional<UUID> oldDeltaDeleteShardUuid, Map<String, Type> columns, Optional<Boolean> deltaDelete)
+    private ShardRewriter createShardRewriter(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Optional<UUID> oldDeltaDeleteShardUuid, Optional<Boolean> deltaDeleteEnabled, Map<String, Type> columns)
     {
         return (rowsToDelete, blockToDelete) -> {
             if (rowsToDelete.isEmpty()) {
                 return completedFuture(ImmutableList.of());
             }
-            return supplyAsync(() -> rewriteShard(transactionId, bucketNumber, shardUuid, oldDeltaDeleteShardUuid, columns, rowsToDelete, blockToDelete, deltaDelete), deletionExecutor);
+            return supplyAsync(() -> rewriteShard(transactionId, bucketNumber, shardUuid, oldDeltaDeleteShardUuid, columns, rowsToDelete, blockToDelete, deltaDeleteEnabled), deletionExecutor);
         };
     }
 
@@ -449,7 +449,7 @@ public class OrcStorageManager
     }
 
     @VisibleForTesting
-    Collection<Slice> rewriteShard(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Optional<UUID> oldDeltaDeleteShardUuid, Map<String, Type> columns, BitSet rowsToDelete, Block blockToDelete, Optional<Boolean> deltaDelete)
+    Collection<Slice> rewriteShard(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Optional<UUID> oldDeltaDeleteShardUuid, Map<String, Type> columns, BitSet rowsToDelete, Block blockToDelete, Optional<Boolean> deltaDeleteEnabled)
     {
         if (rowsToDelete.isEmpty()) {
             return ImmutableList.of();
@@ -459,7 +459,7 @@ public class OrcStorageManager
         Path input = storageService.getStorageFile(shardUuid);
         Path output = storageService.getStagingFile(newShardUuid);
 
-        if (deltaDelete.isPresent() && deltaDelete.get()) {
+        if (deltaDeleteEnabled.isPresent() && deltaDeleteEnabled.get()) {
             return writeDeltaDeleteFile(shardUuid, oldDeltaDeleteShardUuid, transactionId, blockToDelete, bucketNumber);
         }
 

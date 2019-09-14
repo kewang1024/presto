@@ -702,7 +702,7 @@ public class TestOrcStorageManager
             UUID uuid,
             TupleDomain<RaptorColumnHandle> tupleDomain)
     {
-        return manager.getPageSource(uuid, Optional.empty(), OptionalInt.empty(), columnIds, columnTypes, tupleDomain, READER_ATTRIBUTES, Optional.empty());
+        return manager.getPageSource(uuid, Optional.empty(), Optional.empty(), OptionalInt.empty(), columnIds, columnTypes, tupleDomain, READER_ATTRIBUTES);
     }
 
     private static StoragePageSink createStoragePageSink(StorageManager manager, List<Long> columnIds, List<Type> columnTypes)

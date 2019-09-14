@@ -96,7 +96,7 @@ public final class ShardCompactor
     {
         for (UUID uuid : uuids) {
             // todo
-            try (ConnectorPageSource pageSource = storageManager.getPageSource(uuid, Optional.empty(), bucketNumber, columnIds, columnTypes, TupleDomain.all(), readerAttributes, Optional.empty())) {
+            try (ConnectorPageSource pageSource = storageManager.getPageSource(uuid, Optional.empty(), Optional.empty(), bucketNumber, columnIds, columnTypes, TupleDomain.all(), readerAttributes)) {
                 while (!pageSource.isFinished()) {
                     Page page = pageSource.getNextPage();
                     if (isNullOrEmptyPage(page)) {
@@ -133,7 +133,7 @@ public final class ShardCompactor
         try {
             // todo
             for (UUID uuid : uuids) {
-                ConnectorPageSource pageSource = storageManager.getPageSource(uuid, Optional.empty(), bucketNumber, columnIds, columnTypes, TupleDomain.all(), readerAttributes, Optional.empty());
+                ConnectorPageSource pageSource = storageManager.getPageSource(uuid, Optional.empty(), Optional.empty(), bucketNumber, columnIds, columnTypes, TupleDomain.all(), readerAttributes);
                 SortedPageSource rowSource = new SortedPageSource(pageSource, columnTypes, sortIndexes, sortOrders);
                 rowSources.add(rowSource);
             }
