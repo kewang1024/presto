@@ -832,7 +832,7 @@ public class RaptorMetadata
             OptionalLong updateTime = OptionalLong.of(session.getStartTime());
 
             log.info("Finishing delete for tableId %s (affected shardUuid: %s)", tableId, shardMapBuilder.build().size());
-            shardManager.updateDeltaShardUuids(transactionId, tableId, columns, shardMapBuilder.build(), updateTime);
+            shardManager.replaceDeltaUuids(transactionId, tableId, columns, shardMapBuilder.build(), updateTime);
         }
         else {
             ImmutableSet.Builder<UUID> oldShardUuidsBuilder = ImmutableSet.builder();
@@ -850,7 +850,8 @@ public class RaptorMetadata
             OptionalLong updateTime = OptionalLong.of(session.getStartTime());
 
             log.info("Finishing delete for tableId %s (removed: %s, rewritten: %s)", tableId, oldShardUuids.size() - newShards.size(), newShards.size());
-            shardManager.replaceShardUuids(transactionId, tableId, columns, oldShardUuids, newShards, updateTime);
+            // todo oldShardUuids
+            shardManager.replaceShardUuids(transactionId, tableId, columns, null, newShards, updateTime);
         }
 
         clearRollback();

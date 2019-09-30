@@ -36,12 +36,12 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.PriorityQueue;
 import java.util.Queue;
-import java.util.Set;
 import java.util.UUID;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -69,7 +69,7 @@ public final class ShardCompactor
         this.readerAttributes = requireNonNull(readerAttributes, "readerAttributes is null");
     }
 
-    public List<ShardInfo> compact(long transactionId, OptionalInt bucketNumber, Set<UUID> uuids, List<ColumnInfo> columns)
+    public List<ShardInfo> compact(long transactionId, OptionalInt bucketNumber, Map<UUID, Optional<UUID>> uuidsMap, List<ColumnInfo> columns)
             throws IOException
     {
         long start = System.nanoTime();
@@ -80,23 +80,23 @@ public final class ShardCompactor
 
         List<ShardInfo> shardInfos;
         try {
-            shardInfos = compact(storagePageSink, bucketNumber, uuids, columnIds, columnTypes);
+            shardInfos = compact(storagePageSink, bucketNumber, uuidsMap, columnIds, columnTypes);
         }
         catch (IOException | RuntimeException e) {
             storagePageSink.rollback();
             throw e;
         }
 
-        updateStats(uuids.size(), shardInfos.size(), nanosSince(start).toMillis());
+        // todo do we consider about the delta shards count
+        updateStats(uuidsMap.size(), shardInfos.size(), nanosSince(start).toMillis());
         return shardInfos;
     }
 
-    private List<ShardInfo> compact(StoragePageSink storagePageSink, OptionalInt bucketNumber, Set<UUID> uuids, List<Long> columnIds, List<Type> columnTypes)
+    private List<ShardInfo> compact(StoragePageSink storagePageSink, OptionalInt bucketNumber, Map<UUID, Optional<UUID>> uuidsMap, List<Long> columnIds, List<Type> columnTypes)
             throws IOException
     {
-        for (UUID uuid : uuids) {
-            // todo
-            try (ConnectorPageSource pageSource = storageManager.getPageSource(uuid, Optional.empty(), Optional.empty(), bucketNumber, columnIds, columnTypes, TupleDomain.all(), readerAttributes)) {
+        uuidsMap.forEach((uuid, deltaUuid) -> {
+            try (ConnectorPageSource pageSource = storageManager.getPageSource(uuid, deltaUuid, Optional.empty(), bucketNumber, columnIds, columnTypes, TupleDomain.all(), readerAttributes)) {
                 while (!pageSource.isFinished()) {
                     Page page = pageSource.getNextPage();
                     if (isNullOrEmptyPage(page)) {
@@ -108,11 +108,14 @@ public final class ShardCompactor
                     }
                 }
             }
-        }
+            catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
         return getFutureValue(storagePageSink.commit());
     }
 
-    public List<ShardInfo> compactSorted(long transactionId, OptionalInt bucketNumber, Set<UUID> uuids, List<ColumnInfo> columns, List<Long> sortColumnIds, List<SortOrder> sortOrders)
+    public List<ShardInfo> compactSorted(long transactionId, OptionalInt bucketNumber, Map<UUID, Optional<UUID>> uuidsMap, List<ColumnInfo> columns, List<Long> sortColumnIds, List<SortOrder> sortOrders)
             throws IOException
     {
         checkArgument(sortColumnIds.size() == sortOrders.size(), "sortColumnIds and sortOrders must be of the same size");
@@ -131,12 +134,12 @@ public final class ShardCompactor
         Queue<SortedPageSource> rowSources = new PriorityQueue<>();
         StoragePageSink outputPageSink = storageManager.createStoragePageSink(transactionId, bucketNumber, columnIds, columnTypes, false);
         try {
-            // todo
-            for (UUID uuid : uuids) {
-                ConnectorPageSource pageSource = storageManager.getPageSource(uuid, Optional.empty(), Optional.empty(), bucketNumber, columnIds, columnTypes, TupleDomain.all(), readerAttributes);
+            uuidsMap.forEach((uuid, deltaUuid) -> {
+                ConnectorPageSource pageSource = storageManager.getPageSource(uuid, deltaUuid, Optional.empty(), bucketNumber, columnIds, columnTypes, TupleDomain.all(), readerAttributes);
                 SortedPageSource rowSource = new SortedPageSource(pageSource, columnTypes, sortIndexes, sortOrders);
                 rowSources.add(rowSource);
-            }
+            });
+
             while (!rowSources.isEmpty()) {
                 SortedPageSource rowSource = rowSources.poll();
                 if (!rowSource.hasNext()) {
@@ -156,7 +159,8 @@ public final class ShardCompactor
             outputPageSink.flush();
             List<ShardInfo> shardInfos = getFutureValue(outputPageSink.commit());
 
-            updateStats(uuids.size(), shardInfos.size(), nanosSince(start).toMillis());
+            // todo do we consider about the delta shards count
+            updateStats(uuidsMap.size(), shardInfos.size(), nanosSince(start).toMillis());
 
             return shardInfos;
         }

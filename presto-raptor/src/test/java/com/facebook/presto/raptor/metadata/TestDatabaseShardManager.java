@@ -330,7 +330,8 @@ public class TestDatabaseShardManager
         Set<UUID> replacedUuids = shardMetadata.stream().map(ShardMetadata::getShardUuid).collect(toSet());
 
         transactionId = shardManager.beginTransaction();
-        shardManager.replaceShardUuids(transactionId, tableId, columns, replacedUuids, newShards, OptionalLong.of(0));
+        // todo replacedUuids
+        shardManager.replaceShardUuids(transactionId, tableId, columns, null, newShards, OptionalLong.of(0));
 
         shardMetadata = shardManager.getNodeShards(nodes.get(0));
         Set<UUID> actualUuids = shardMetadata.stream().map(ShardMetadata::getShardUuid).collect(toSet());
@@ -354,7 +355,8 @@ public class TestDatabaseShardManager
         newShards = ImmutableList.of(shardInfo(UUID.randomUUID(), nodes.get(0)));
         try {
             transactionId = shardManager.beginTransaction();
-            shardManager.replaceShardUuids(transactionId, tableId, columns, replacedUuids, newShards, OptionalLong.of(0));
+            // todo replacedUuids
+            shardManager.replaceShardUuids(transactionId, tableId, columns, null, newShards, OptionalLong.of(0));
             fail("expected exception");
         }
         catch (PrestoException e) {
@@ -388,7 +390,7 @@ public class TestDatabaseShardManager
         shardMap.put(originalUuids.get(0), new Pair(Optional.empty(), Optional.of(newShards.get(0))));
 
         transactionId = shardManager.beginTransaction();
-        shardManager.updateDeltaShardUuids(transactionId, tableId, columns, shardMap, OptionalLong.of(0));
+        shardManager.replaceDeltaUuids(transactionId, tableId, columns, shardMap, OptionalLong.of(0));
 
         Set<ShardMetadata> shardMetadata = shardManager.getNodeShards(nodes.get(0));
         Set<UUID> actualUuids = shardMetadata.stream().map(ShardMetadata::getShardUuid).collect(toSet());
@@ -437,7 +439,7 @@ public class TestDatabaseShardManager
         shardMap.put(originalUuids.get(0), new Pair(Optional.empty(), Optional.empty()));
 
         transactionId = shardManager.beginTransaction();
-        shardManager.updateDeltaShardUuids(transactionId, tableId, columns, shardMap, OptionalLong.of(0));
+        shardManager.replaceDeltaUuids(transactionId, tableId, columns, shardMap, OptionalLong.of(0));
 
         Set<ShardMetadata> shardMetadata = shardManager.getNodeShards(nodes.get(0));
         Set<UUID> actualUuids = shardMetadata.stream().map(ShardMetadata::getShardUuid).collect(toSet());
@@ -813,7 +815,8 @@ public class TestDatabaseShardManager
 
         long transactionId = shardManager.beginTransaction();
         try {
-            shardManager.replaceShardUuids(transactionId, tableId, columns, oldShards, ImmutableSet.of(), OptionalLong.empty());
+            // todo oldShards
+            shardManager.replaceShardUuids(transactionId, tableId, columns, null, ImmutableSet.of(), OptionalLong.empty());
             fail("expected exception");
         }
         catch (PrestoException e) {
