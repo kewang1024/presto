@@ -230,14 +230,14 @@ public class RaptorSplitManager
 
             verify(bucketShards.getShards().size() == 1, "wrong shard count for non-bucketed table");
             ShardNodes shard = getOnlyElement(bucketShards.getShards());
-            UUID shardId = shard.getShardUuid();
+            UUID shardUuid = shard.getShardUuid();
             UUID deltaShardUuid = shard.getDeltaShardUuid();
             Set<String> nodeIds = shard.getNodeIdentifiers();
 
             List<HostAddress> addresses = getAddressesForNodes(nodesById, nodeIds);
             if (addresses.isEmpty()) {
                 if (!backupAvailable) {
-                    throw new PrestoException(RAPTOR_NO_HOST_FOR_SHARD, format("No host for shard %s found: %s", shardId, nodeIds));
+                    throw new PrestoException(RAPTOR_NO_HOST_FOR_SHARD, format("No host for shard %s found: %s", shardUuid, nodeIds));
                 }
 
                 // Pick a random node and optimistically assign the shard to it.
@@ -247,15 +247,15 @@ public class RaptorSplitManager
                     throw new PrestoException(NO_NODES_AVAILABLE, "No nodes available to run query");
                 }
                 Node node = selectRandom(availableNodes);
-                shardManager.replaceShardAssignment(tableId, shardId,
+                shardManager.replaceShardAssignment(tableId, shardUuid,
                         deltaShardUuid == null ? Optional.empty() : Optional.of(deltaShardUuid), node.getNodeIdentifier(), true);
                 addresses = ImmutableList.of(node.getHostAndPort());
             }
 
             return new RaptorSplit(
                     connectorId,
-                    shardId,
-                    deltaShardUuid == null ? Optional.empty() : Optional.of(ImmutableMap.of(shardId, deltaShardUuid)),
+                    shardUuid,
+                    deltaShardUuid == null ? Optional.empty() : Optional.of(ImmutableMap.of(shardUuid, deltaShardUuid)),
                     Optional.of(deltaDeleteEnabled),
                     addresses,
                     effectivePredicate,
