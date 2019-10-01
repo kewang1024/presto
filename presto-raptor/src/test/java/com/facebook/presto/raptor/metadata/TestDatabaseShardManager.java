@@ -202,7 +202,7 @@ public class TestDatabaseShardManager
         assertEquals(actual, new ShardNodes(shard, null, ImmutableSet.of("node1")));
 
         try {
-            shardManager.replaceShardAssignment(tableId, shard, "node2", true);
+            shardManager.replaceShardAssignment(tableId, shard, Optional.empty(), "node2", true);
             fail("expected exception");
         }
         catch (PrestoException e) {
@@ -210,13 +210,13 @@ public class TestDatabaseShardManager
         }
 
         // replace shard assignment to another node
-        shardManager.replaceShardAssignment(tableId, shard, "node2", false);
+        shardManager.replaceShardAssignment(tableId, shard, Optional.empty(), "node2", false);
 
         actual = getOnlyElement(getShardNodes(tableId, TupleDomain.all()));
         assertEquals(actual, new ShardNodes(shard, null, ImmutableSet.of("node2")));
 
         // replacing shard assignment should be idempotent
-        shardManager.replaceShardAssignment(tableId, shard, "node2", false);
+        shardManager.replaceShardAssignment(tableId, shard, Optional.empty(), "node2", false);
 
         actual = getOnlyElement(getShardNodes(tableId, TupleDomain.all()));
         assertEquals(actual, new ShardNodes(shard, null, ImmutableSet.of("node2")));
@@ -246,7 +246,7 @@ public class TestDatabaseShardManager
 
         assertEquals(shardManager.getNodeBytes(), ImmutableMap.of("node1", 88L));
 
-        shardManager.replaceShardAssignment(tableId, shard1, "node2", false);
+        shardManager.replaceShardAssignment(tableId, shard1, Optional.empty(), "node2", false);
 
         assertEquals(getShardNodes(tableId, TupleDomain.all()), ImmutableSet.of(
                 new ShardNodes(shard1, null, ImmutableSet.of("node2")),
