@@ -382,7 +382,7 @@ public class ShardCleaner
             throws IOException
     {
         // get shards assigned to the local node
-        Set<UUID> assigned = dao.getNodeShards(currentNode, null).stream()
+        Set<UUID> assigned = dao.getNodeShardsAndDeltas(currentNode, null).stream()
                 .map(ShardMetadata::getShardUuid)
                 .collect(toSet());
 
@@ -405,7 +405,7 @@ public class ShardCleaner
         Set<UUID> local = getLocalShards();
 
         // get shards assigned to the local node
-        Set<UUID> assigned = dao.getNodeShards(currentNode, null).stream()
+        Set<UUID> assigned = dao.getNodeShardsAndDeltas(currentNode, null).stream()
                 .map(ShardMetadata::getShardUuid)
                 .collect(toSet());
 

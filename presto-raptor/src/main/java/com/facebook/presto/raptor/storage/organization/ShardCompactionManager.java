@@ -169,17 +169,19 @@ public class ShardCompactionManager
     private void discoverShards()
     {
         log.info("Discovering shards that need compaction...");
-        Set<ShardMetadata> allShards = shardManager.getNodeShards(currentNodeIdentifier);
+        Set<ShardMetadata> allShards = shardManager.getNodeShardsOnly(currentNodeIdentifier);
         ListMultimap<Long, ShardMetadata> tableShards = Multimaps.index(allShards, ShardMetadata::getTableId);
 
         for (Entry<Long, List<ShardMetadata>> entry : Multimaps.asMap(tableShards).entrySet()) {
             long tableId = entry.getKey();
             if (!metadataDao.isCompactionEligible(tableId)) {
+                log.info("Table %s is not eligible for compaction", tableId);
                 continue;
             }
             List<ShardMetadata> shards = entry.getValue();
+            log.info("Start compaction filter for table %s (%s shards)", tableId, shards.size());
             Collection<OrganizationSet> organizationSets = filterAndCreateCompactionSets(tableId, shards);
-            log.info("Created %s organization set(s) for table ID %s", organizationSets.size(), tableId);
+            log.info("Created %s compaction set(s) from %s shards for table ID %s", organizationSets.size(), shards.size(), tableId);
 
             for (OrganizationSet set : organizationSets) {
                 organizer.enqueue(set);
@@ -230,6 +232,10 @@ public class ShardCompactionManager
         }
 
         if (shard.getRowCount() < (FILL_FACTOR * maxShardRows)) {
+            return true;
+        }
+
+        if (shard.getDeltaUuid().isPresent()) {
             return true;
         }
         return false;
