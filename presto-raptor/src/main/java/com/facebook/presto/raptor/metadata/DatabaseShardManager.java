@@ -963,15 +963,21 @@ public class DatabaseShardManager
     }
 
     @Override
-    public Set<ShardMetadata> getNodeShards(String nodeIdentifier)
+    public Set<ShardMetadata> getNodeShardsAndDeltas(String nodeIdentifier)
     {
-        return dao.getNodeShards(nodeIdentifier, null);
+        return dao.getNodeShardsAndDeltas(nodeIdentifier, null);
     }
 
     @Override
-    public Set<ShardMetadata> getNodeShards(String nodeIdentifier, long tableId)
+    public Set<ShardMetadata> getNodeShardsOnly(String nodeIdentifier)
     {
-        return dao.getNodeShards(nodeIdentifier, tableId);
+        return dao.getNodeShardsOnly(nodeIdentifier, null);
+    }
+
+    @Override
+    public Set<ShardMetadata> getNodeShardsOnly(String nodeIdentifier, long tableId)
+    {
+        return dao.getNodeShardsOnly(nodeIdentifier, tableId);
     }
 
     @Override

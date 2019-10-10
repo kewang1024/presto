@@ -130,6 +130,7 @@ public class ShardOrganizationManager
     public void start()
     {
         if (!enabled || started.getAndSet(true)) {
+            log.info("ShardOrganizationManager return");
             return;
         }
 
@@ -190,7 +191,7 @@ public class ShardOrganizationManager
 
     private void runOrganization(long tableId)
     {
-        Set<ShardMetadata> shardMetadatas = shardManager.getNodeShards(currentNodeIdentifier, tableId);
+        Set<ShardMetadata> shardMetadatas = shardManager.getNodeShardsOnly(currentNodeIdentifier, tableId);
         Table tableInfo = metadataDao.getTableInformation(tableId);
         Set<ShardMetadata> filteredShards = shardMetadatas.stream()
                 .filter(shard -> !organizer.inProgress(shard.getShardUuid()))
@@ -279,7 +280,7 @@ public class ShardOrganizationManager
             else {
                 Set<ShardIndexInfo> indexInfos = builder.build();
                 if (indexInfos.size() > 1) {
-                    organizationSets.add(createOrganizationSet(tableInfo.getTableId(), indexInfos));
+                    organizationSets.add(createOrganizationSet(tableInfo.getTableId(), tableInfo.isTableSupportsDeltaDelete(), indexInfos));
                 }
                 builder = ImmutableSet.builder();
                 previousRange = nextRange;
@@ -290,7 +291,7 @@ public class ShardOrganizationManager
 
         Set<ShardIndexInfo> indexInfos = builder.build();
         if (indexInfos.size() > 1) {
-            organizationSets.add(createOrganizationSet(tableInfo.getTableId(), indexInfos));
+            organizationSets.add(createOrganizationSet(tableInfo.getTableId(), tableInfo.isTableSupportsDeltaDelete(), indexInfos));
         }
         return organizationSets;
     }

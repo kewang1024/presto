@@ -216,7 +216,7 @@ public class ShardEjector
         nodes = new HashMap<>(filterValues(nodes, size -> size <= averageSize));
 
         // get non-bucketed node shards by size, largest to smallest
-        List<ShardMetadata> shards = shardManager.getNodeShards(currentNode).stream()
+        List<ShardMetadata> shards = shardManager.getNodeShardAndDeltas(currentNode).stream()
                 .filter(shard -> !shard.getBucketNumber().isPresent())
                 .sorted(comparingLong(ShardMetadata::getCompressedSize).reversed())
                 .collect(toList());
