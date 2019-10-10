@@ -14,8 +14,10 @@
 package com.facebook.presto.raptor;
 
 import com.facebook.presto.raptor.metadata.ColumnInfo;
+import com.facebook.presto.raptor.metadata.DeltaInfoPair;
 import com.facebook.presto.raptor.metadata.Distribution;
 import com.facebook.presto.raptor.metadata.MetadataDao;
+import com.facebook.presto.raptor.metadata.ShardDeleteDelta;
 import com.facebook.presto.raptor.metadata.ShardDelta;
 import com.facebook.presto.raptor.metadata.ShardInfo;
 import com.facebook.presto.raptor.metadata.ShardManager;
@@ -134,6 +136,7 @@ public class RaptorMetadata
 
     private static final JsonCodec<ShardInfo> SHARD_INFO_CODEC = jsonCodec(ShardInfo.class);
     private static final JsonCodec<ShardDelta> SHARD_DELTA_CODEC = jsonCodec(ShardDelta.class);
+    private static final JsonCodec<ShardDeleteDelta> SHARD_DELTA_DELETE_CODEC = jsonCodec(ShardDeleteDelta.class);
 
     private final IDBI dbi;
     private final MetadataDao dao;
@@ -820,6 +823,19 @@ public class RaptorMetadata
                 .map(RaptorColumnHandle.class::cast)
                 .map(ColumnInfo::fromHandle).collect(toList());
 
+        if (table.isTableSupportsDeltaDelete()) {
+            ImmutableMap.Builder<UUID, DeltaInfoPair> shardMapBuilder = new ImmutableMap.Builder<>();
+
+            fragments.stream()
+                    .map(fragment -> SHARD_DELTA_DELETE_CODEC.fromJson(fragment.getBytes()))
+                    .forEach(delta -> shardMapBuilder.put(delta.getOldShardUuid(), new DeltaInfoPair(delta.getOldDeltaDeleteShard(), delta.getNewDeltaDeleteShard())));
+            OptionalLong updateTime = OptionalLong.of(session.getStartTime());
+
+            log.info("Finishing delete for tableId %s (affected shardUuid: %s)", tableId, shardMapBuilder.build().size());
+            shardManager.replaceDeltaUuids(transactionId, tableId, columns, shardMapBuilder.build(), updateTime);
+            clearRollback();
+            return;
+        }
         ImmutableSet.Builder<UUID> oldShardUuidsBuilder = ImmutableSet.builder();
         ImmutableList.Builder<ShardInfo> newShardsBuilder = ImmutableList.builder();
 

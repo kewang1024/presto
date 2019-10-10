@@ -53,6 +53,25 @@ public interface ShardManager
     void replaceShardUuids(long transactionId, long tableId, List<ColumnInfo> columns, Set<UUID> oldShardUuids, Collection<ShardInfo> newShards, OptionalLong updateTime);
 
     /**
+     * Replace oldShardsUuids with newShards.
+     * Used by compaction.
+     * With tableSupportsDeltaDelete: Delete oldShardsUuids with their delta shards
+     * Add newShards
+     */
+    void replaceShardUuids(long transactionId, boolean tableSupportsDeltaDelete, long tableId, List<ColumnInfo> columns, Map<UUID, Optional<UUID>> oldShardUuids, Collection<ShardInfo> newShards, OptionalLong updateTime);
+
+    /**
+     * Replace oldDeltaDeleteShard with newDeltaDeleteShard.
+     * Used by delta delete.
+     * For shardMap:
+     *      UUID is the target file.
+     *      Optional<UUID> in the Pair is the oldDeltaDeleteShard for the target file.
+     *      Optional<ShardInfo>> in the Pair is the newDeltaDeleteShard for the target file.
+     * NOTE: Optional<ShardInfo>> being Optional.empty() means deleting the target file.
+     */
+    void replaceDeltaUuids(long transactionId, long tableId, List<ColumnInfo> columns, Map<UUID, DeltaInfoPair> shardMap, OptionalLong updateTime);
+
+    /**
      * Get shard metadata for a shard.
      */
     ShardMetadata getShard(UUID shardUuid);
