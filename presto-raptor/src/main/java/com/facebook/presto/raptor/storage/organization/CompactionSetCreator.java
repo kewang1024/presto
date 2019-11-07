@@ -79,6 +79,13 @@ public class CompactionSetCreator
                 if (shardsToCompact.size() > 1) {
                     compactionSets.add(createOrganizationSet(tableId, tableInfo.isTableSupportsDeltaDelete(), shardsToCompact));
                 }
+                // Add special rule for shard which is too big to compact with other shard but have delta to compact
+                else if (shardsToCompact.size() == 1 && shardsToCompact.iterator().next().getDeltaUuid().isPresent()) {
+                    compactionSets.add(createOrganizationSet(
+                            tableId,
+                            tableInfo.isTableSupportsDeltaDelete(),
+                            ImmutableSet.of(shardsToCompact.iterator().next())));
+                }
 
                 builder = ImmutableSet.builder();
                 consumedBytes = 0;
@@ -93,6 +100,13 @@ public class CompactionSetCreator
         Set<ShardIndexInfo> shardsToCompact = builder.build();
         if (shardsToCompact.size() > 1) {
             compactionSets.add(createOrganizationSet(tableId, tableInfo.isTableSupportsDeltaDelete(), shardsToCompact));
+        }
+        // Add special rule for shard which is too big to compact with other shard but have delta to compact
+        else if (shardsToCompact.size() == 1 && shardsToCompact.iterator().next().getDeltaUuid().isPresent()) {
+            compactionSets.add(createOrganizationSet(
+                    tableId,
+                    tableInfo.isTableSupportsDeltaDelete(),
+                    ImmutableSet.of(shardsToCompact.iterator().next())));
         }
         return compactionSets.build();
     }
