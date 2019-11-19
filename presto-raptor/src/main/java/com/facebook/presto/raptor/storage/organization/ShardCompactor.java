@@ -57,8 +57,10 @@ public final class ShardCompactor
     private final StorageManager storageManager;
 
     private final CounterStat inputShards = new CounterStat();
+    private final CounterStat inputDeltaShards = new CounterStat();
     private final CounterStat outputShards = new CounterStat();
     private final DistributionStat inputShardsPerCompaction = new DistributionStat();
+    private final DistributionStat inputDeltaShardsPerCompaction = new DistributionStat();
     private final DistributionStat outputShardsPerCompaction = new DistributionStat();
     private final DistributionStat compactionLatencyMillis = new DistributionStat();
     private final DistributionStat sortedCompactionLatencyMillis = new DistributionStat();
@@ -91,7 +93,7 @@ public final class ShardCompactor
 
         // Will consider delta shard as part of inputShards
         int deltaCount = uuidsMap.values().stream().filter(uuid -> uuid.isPresent()).collect(toImmutableSet()).size();
-        updateStats(uuidsMap.size() + deltaCount, shardInfos.size(), nanosSince(start).toMillis());
+        updateStats(uuidsMap.size(), deltaCount, shardInfos.size(), nanosSince(start).toMillis());
         return shardInfos;
     }
 
@@ -163,7 +165,7 @@ public final class ShardCompactor
 
             // Will consider delta shard as part of inputShards
             int deltaCount = uuidsMap.values().stream().filter(uuid -> uuid.isPresent()).collect(toImmutableSet()).size();
-            updateStats(uuidsMap.size() + deltaCount, shardInfos.size(), nanosSince(start).toMillis());
+            updateStats(uuidsMap.size(), deltaCount, shardInfos.size(), nanosSince(start).toMillis());
 
             return shardInfos;
         }
@@ -295,12 +297,14 @@ public final class ShardCompactor
         return nextPage == null || nextPage.getPositionCount() == 0;
     }
 
-    private void updateStats(int inputShardsCount, int outputShardsCount, long latency)
+    private void updateStats(int inputShardsCount, int inputDeltaShardsCount, int outputShardsCount, long latency)
     {
         inputShards.update(inputShardsCount);
+        inputDeltaShards.update(inputDeltaShardsCount);
         outputShards.update(outputShardsCount);
 
         inputShardsPerCompaction.add(inputShardsCount);
+        inputDeltaShardsPerCompaction.add(inputDeltaShardsCount);
         outputShardsPerCompaction.add(outputShardsCount);
 
         compactionLatencyMillis.add(latency);
@@ -315,6 +319,13 @@ public final class ShardCompactor
 
     @Managed
     @Nested
+    public CounterStat getInputDeltaShards()
+    {
+        return inputDeltaShards;
+    }
+
+    @Managed
+    @Nested
     public CounterStat getOutputShards()
     {
         return outputShards;
@@ -325,6 +336,13 @@ public final class ShardCompactor
     public DistributionStat getInputShardsPerCompaction()
     {
         return inputShardsPerCompaction;
+    }
+
+    @Managed
+    @Nested
+    public DistributionStat getInputDeltaShardsPerCompaction()
+    {
+        return inputDeltaShardsPerCompaction;
     }
 
     @Managed
