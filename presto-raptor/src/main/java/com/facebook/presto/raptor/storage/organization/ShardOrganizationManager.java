@@ -25,6 +25,8 @@ import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.MoreExecutors;
 import io.airlift.log.Logger;
 import io.airlift.units.Duration;
 import org.skife.jdbi.v2.IDBI;
@@ -38,7 +40,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -50,7 +51,6 @@ import static com.facebook.presto.raptor.storage.organization.ShardOrganizerUtil
 import static com.facebook.presto.raptor.util.DatabaseUtil.onDemandDao;
 import static com.google.common.collect.Sets.difference;
 import static com.google.common.collect.Sets.newConcurrentHashSet;
-import static io.airlift.concurrent.MoreFutures.allAsList;
 import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static java.lang.Math.max;
 import static java.util.Objects.requireNonNull;
@@ -209,15 +209,18 @@ public class ShardOrganizationManager
         long lastStartTime = System.currentTimeMillis();
         tablesInProgress.add(tableId);
 
-        ImmutableList.Builder<CompletableFuture<?>> futures = ImmutableList.builder();
+        ImmutableList.Builder<ListenableFuture<?>> futures = ImmutableList.builder();
         for (OrganizationSet organizationSet : organizationSets) {
             futures.add(organizer.enqueue(organizationSet));
         }
-        allAsList(futures.build())
-                .whenComplete((value, throwable) -> {
-                    tablesInProgress.remove(tableId);
-                    organizerDao.updateLastStartTime(currentNodeIdentifier, tableId, lastStartTime);
-                });
+        futures.build().forEach(listenableFuture -> {
+            listenableFuture.addListener(
+                    () -> {
+                        tablesInProgress.remove(tableId);
+                        organizerDao.updateLastStartTime(currentNodeIdentifier, tableId, lastStartTime);
+                    },
+                    MoreExecutors.directExecutor());
+        });
     }
 
     private boolean shouldRunOrganization(TableOrganizationInfo info)
@@ -280,7 +283,7 @@ public class ShardOrganizationManager
             else {
                 Set<ShardIndexInfo> indexInfos = builder.build();
                 if (indexInfos.size() > 1) {
-                    organizationSets.add(createOrganizationSet(tableInfo.getTableId(), tableInfo.isTableSupportsDeltaDelete(), indexInfos));
+                    organizationSets.add(createOrganizationSet(tableInfo.getTableId(), tableInfo.isTableSupportsDeltaDelete(), indexInfos, 0));
                 }
                 builder = ImmutableSet.builder();
                 previousRange = nextRange;
@@ -291,7 +294,7 @@ public class ShardOrganizationManager
 
         Set<ShardIndexInfo> indexInfos = builder.build();
         if (indexInfos.size() > 1) {
-            organizationSets.add(createOrganizationSet(tableInfo.getTableId(), tableInfo.isTableSupportsDeltaDelete(), indexInfos));
+            organizationSets.add(createOrganizationSet(tableInfo.getTableId(), tableInfo.isTableSupportsDeltaDelete(), indexInfos, 0));
         }
         return organizationSets;
     }

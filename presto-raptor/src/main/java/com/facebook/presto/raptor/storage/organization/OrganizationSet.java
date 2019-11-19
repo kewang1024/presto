@@ -21,6 +21,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
+import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static java.util.Objects.requireNonNull;
 
 public class OrganizationSet
@@ -29,6 +30,7 @@ public class OrganizationSet
     private final boolean tableSupportsDeltaDelete;
     private final Map<UUID, Optional<UUID>> shardsMap;
     private final OptionalInt bucketNumber;
+    private int priority;
 
     public OrganizationSet(long tableId, boolean tableSupportsDeltaDelete, Map<UUID, Optional<UUID>> shardsMap, OptionalInt bucketNumber)
     {
@@ -36,6 +38,12 @@ public class OrganizationSet
         this.tableSupportsDeltaDelete = tableSupportsDeltaDelete;
         this.shardsMap = requireNonNull(shardsMap, "shards is null");
         this.bucketNumber = requireNonNull(bucketNumber, "bucketNumber is null");
+    }
+
+    public <T> OrganizationSet(long tableId, boolean tableSupportsDeltaDelete, Map<UUID, Optional<UUID>> shardsMap, OptionalInt bucketNumber, int priority)
+    {
+        this(tableId, tableSupportsDeltaDelete, shardsMap, bucketNumber);
+        this.priority = priority;
     }
 
     public long getTableId()
@@ -61,6 +69,11 @@ public class OrganizationSet
     public OptionalInt getBucketNumber()
     {
         return bucketNumber;
+    }
+
+    public int getPriority()
+    {
+        return priority;
     }
 
     @Override
@@ -91,7 +104,9 @@ public class OrganizationSet
         return toStringHelper(this)
                 .add("tableId", tableId)
                 .add("tableSupportsDeltaDelete", tableSupportsDeltaDelete)
-                .add("shards", shardsMap)
+                .add("shardSize", shardsMap.size())
+                .add("deltaSize", shardsMap.values().stream().filter(delta -> delta.isPresent()).collect(toImmutableSet()).size())
+                .add("priority", priority)
                 .add("bucketNumber", bucketNumber.isPresent() ? bucketNumber.getAsInt() : null)
                 .omitNullValues()
                 .toString();

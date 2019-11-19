@@ -44,6 +44,7 @@ class OrganizationJob
     private final ShardManager shardManager;
     private final ShardCompactor compactor;
     private final OrganizationSet organizationSet;
+    private int priority;
 
     public OrganizationJob(OrganizationSet organizationSet, MetadataDao metadataDao, ShardManager shardManager, ShardCompactor compactor)
     {
@@ -51,6 +52,7 @@ class OrganizationJob
         this.shardManager = requireNonNull(shardManager, "shardManager is null");
         this.compactor = requireNonNull(compactor, "compactor is null");
         this.organizationSet = requireNonNull(organizationSet, "organizationSet is null");
+        this.priority = organizationSet.getPriority();
     }
 
     @Override
@@ -120,5 +122,22 @@ class OrganizationJob
                 tableMetadata.getColumns(),
                 tableMetadata.getSortColumnIds(),
                 nCopies(tableMetadata.getSortColumnIds().size(), ASC_NULLS_FIRST));
+    }
+
+    public int getPriority()
+    {
+        return priority;
+    }
+
+    @Override
+    public String toString()
+    {
+        return "OrganizationJob{" +
+                "metadataDao=" + metadataDao +
+                ", shardManager=" + shardManager +
+                ", compactor=" + compactor +
+                ", organizationSet=" + organizationSet +
+                ", priority=" + priority +
+                '}';
     }
 }
