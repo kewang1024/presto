@@ -351,6 +351,7 @@ public class TestOrcStorageManager
                 transactionId,
                 OptionalInt.empty(),
                 shards.get(0).getShardUuid(),
+                2,
                 Optional.empty(),
                 false,
                 IntStream.range(0, columnIds.size()).boxed().collect(Collectors.toMap(index -> String.valueOf(columnIds.get(index)), columnTypes::get)));
@@ -527,6 +528,7 @@ public class TestOrcStorageManager
                 TRANSACTION_ID,
                 OptionalInt.empty(),
                 shards.get(0).getShardUuid(),
+                3,
                 oldDeltaDeleteExist ? Optional.of(oldDeltaDeleteShards.get(0).getShardUuid()) : Optional.empty(),
                 true,
                 null);

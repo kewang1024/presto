@@ -13,8 +13,6 @@
  */
 package com.facebook.presto.raptor.storage;
 
-import com.facebook.presto.orc.OrcDataSource;
-import com.facebook.presto.orc.OrcReader;
 import com.facebook.presto.raptor.metadata.ShardDeleteDelta;
 import com.facebook.presto.raptor.metadata.ShardInfo;
 import com.facebook.presto.spi.Page;
@@ -30,7 +28,6 @@ import io.airlift.json.JsonCodec;
 import io.airlift.slice.Slice;
 import io.airlift.slice.Slices;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collection;
@@ -41,13 +38,10 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
-import static com.facebook.presto.orc.OrcEncoding.ORC;
 import static com.facebook.presto.raptor.RaptorErrorCode.RAPTOR_ERROR;
-import static com.facebook.presto.raptor.storage.OrcStorageManager.HUGE_MAX_READ_BLOCK_SIZE;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static io.airlift.concurrent.MoreFutures.getFutureValue;
 import static io.airlift.json.JsonCodec.jsonCodec;
-import static java.lang.Math.toIntExact;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.CompletableFuture.supplyAsync;
 
@@ -59,6 +53,7 @@ public class DeltaShardRewriter
     private final long transactionId;
     private final OptionalInt bucketNumber;
     private final UUID oldShardUuid;
+    private final int oldShardRowCount;
     private final Optional<UUID> oldDeltaDeleteShardUuid;
     private final ExecutorService deletionExecutor;
     private final ReaderAttributes defaultReaderAttributes;
@@ -67,6 +62,7 @@ public class DeltaShardRewriter
             long transactionId,
             OptionalInt bucketNumber,
             UUID oldShardUuid,
+            int oldShardRowCount,
             Optional<UUID> oldDeltaDeleteShardUuid,
             OrcStorageManager orcStorageManager,
             ExecutorService deletionExecutor,
@@ -76,6 +72,7 @@ public class DeltaShardRewriter
         this.transactionId = transactionId;
         this.bucketNumber = bucketNumber;
         this.oldShardUuid = oldShardUuid;
+        this.oldShardRowCount = oldShardRowCount;
         this.oldDeltaDeleteShardUuid = oldDeltaDeleteShardUuid;
         this.deletionExecutor = deletionExecutor;
         this.defaultReaderAttributes = defaultReaderAttributes;
@@ -107,7 +104,7 @@ public class DeltaShardRewriter
         // At this point, rowsToDelete couldn't be empty
         oldDeltaDeleteShardUuid.ifPresent(oldDeltaDeleteShardUuid -> mergeToRowsToDelete(rowsToDelete, oldDeltaDeleteShardUuid));
 
-        if (rowsToDelete.cardinality() == getRowCount(oldShardUuid)) {
+        if (rowsToDelete.cardinality() == oldShardRowCount) {
             // Delete original file
             return shardDeleteDelta(oldShardUuid, oldDeltaDeleteShardUuid, Optional.empty());
         }
@@ -141,26 +138,6 @@ public class DeltaShardRewriter
         }
         if (rowsDeleted.isPresent()) {
             rowsToDelete.or(rowsDeleted.get());
-        }
-    }
-
-    private int getRowCount(UUID oldShardUuid)
-    {
-        try (OrcDataSource dataSource = orcStorageManager.openShard(oldShardUuid, defaultReaderAttributes)) {
-            OrcReader reader = new OrcReader(
-                    dataSource,
-                    ORC,
-                    defaultReaderAttributes.getMaxMergeDistance(),
-                    defaultReaderAttributes.getMaxReadSize(),
-                    defaultReaderAttributes.getTinyStripeThreshold(),
-                    HUGE_MAX_READ_BLOCK_SIZE);
-            if (reader.getFooter().getNumberOfRows() >= Integer.MAX_VALUE) {
-                throw new IOException("File has too many rows");
-            }
-            return toIntExact(reader.getFooter().getNumberOfRows());
-        }
-        catch (Exception e) {
-            throw new PrestoException(RAPTOR_ERROR, "Failed to read file: " + oldShardUuid, e);
         }
     }
 

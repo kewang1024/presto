@@ -286,7 +286,17 @@ public class OrcStorageManager
             Optional<ShardRewriter> shardRewriter = Optional.empty();
             if (transactionId.isPresent()) {
                 checkState(allColumnTypes.isPresent());
-                shardRewriter = Optional.of(createShardRewriter(transactionId.getAsLong(), bucketNumber, shardUuid, deltaShardUuid, tableSupportsDeltaDelete, allColumnTypes.get()));
+                if (reader.getFooter().getNumberOfRows() >= Integer.MAX_VALUE) {
+                    throw new PrestoException(RAPTOR_ERROR, "File has too many rows, failed to read file: " + shardUuid);
+                }
+                shardRewriter = Optional.of(createShardRewriter(
+                        transactionId.getAsLong(),
+                        bucketNumber,
+                        shardUuid,
+                        toIntExact(reader.getFooter().getNumberOfRows()),
+                        deltaShardUuid,
+                        tableSupportsDeltaDelete,
+                        allColumnTypes.get()));
             }
             return new OrcPageSource(
                     this,
@@ -378,10 +388,25 @@ public class OrcStorageManager
         return new OrcStoragePageSink(transactionId, columnIds, columnTypes, bucketNumber);
     }
 
-    ShardRewriter createShardRewriter(long transactionId, OptionalInt bucketNumber, UUID shardUuid, Optional<UUID> deltaShardUuid, boolean tableSupportsDeltaDelete, Map<String, Type> columns)
+    ShardRewriter createShardRewriter(
+            long transactionId,
+            OptionalInt bucketNumber,
+            UUID shardUuid,
+            int shardRowCount,
+            Optional<UUID> deltaShardUuid,
+            boolean tableSupportsDeltaDelete,
+            Map<String, Type> columns)
     {
         if (tableSupportsDeltaDelete) {
-            return new DeltaShardRewriter(transactionId, bucketNumber, shardUuid, deltaShardUuid, this, deletionExecutor, defaultReaderAttributes);
+            return new DeltaShardRewriter(
+                    transactionId,
+                    bucketNumber,
+                    shardUuid,
+                    shardRowCount,
+                    deltaShardUuid,
+                    this,
+                    deletionExecutor,
+                    defaultReaderAttributes);
         }
         else {
             return new InplaceShardRewriter(fileSystem, transactionId, bucketNumber, shardUuid, columns, deletionExecutor, nodeId, this, storageService, shardRecorder, backupManager);
