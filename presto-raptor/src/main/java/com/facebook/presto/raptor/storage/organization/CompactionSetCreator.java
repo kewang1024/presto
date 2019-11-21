@@ -76,18 +76,7 @@ public class CompactionSetCreator
                     (consumedRows + shard.getRowCount() > maxShardRows)) {
                 // Finalize this compaction set, and start a new one for the rest of the shards
                 Set<ShardIndexInfo> shardsToCompact = builder.build();
-
-                if (shardsToCompact.size() > 1) {
-                    compactionSets.add(createOrganizationSet(tableId, tableInfo.isTableSupportsDeltaDelete(), shardsToCompact, priority));
-                }
-                // Add special rule for shard which is too big to compact with other shard but have delta to compact
-                else if (shardsToCompact.size() == 1 && shardsToCompact.iterator().next().getDeltaUuid().isPresent()) {
-                    compactionSets.add(createOrganizationSet(
-                            tableId,
-                            tableInfo.isTableSupportsDeltaDelete(),
-                            ImmutableSet.of(shardsToCompact.iterator().next()),
-                            priority));
-                }
+                addToCompactionSets(compactionSets, shardsToCompact, tableId, tableInfo, priority);
 
                 priority = 0;
                 builder = ImmutableSet.builder();
@@ -104,6 +93,12 @@ public class CompactionSetCreator
 
         // create compaction set for the remaining shards of this day
         Set<ShardIndexInfo> shardsToCompact = builder.build();
+        addToCompactionSets(compactionSets, shardsToCompact, tableId, tableInfo, priority);
+        return compactionSets.build();
+    }
+
+    private void addToCompactionSets(ImmutableSet.Builder<OrganizationSet> compactionSets, Set<ShardIndexInfo> shardsToCompact, long tableId, Table tableInfo, int priority)
+    {
         if (shardsToCompact.size() > 1) {
             compactionSets.add(createOrganizationSet(tableId, tableInfo.isTableSupportsDeltaDelete(), shardsToCompact, priority));
         }
@@ -115,7 +110,6 @@ public class CompactionSetCreator
                     ImmutableSet.of(shardsToCompact.iterator().next()),
                     priority));
         }
-        return compactionSets.build();
     }
 
     private static Comparator<ShardIndexInfo> getShardIndexInfoComparator(Table tableInfo)
