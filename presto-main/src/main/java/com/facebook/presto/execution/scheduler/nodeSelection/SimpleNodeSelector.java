@@ -25,6 +25,7 @@ import com.facebook.presto.metadata.InternalNodeManager;
 import com.facebook.presto.metadata.Split;
 import com.facebook.presto.spi.HostAddress;
 import com.facebook.presto.spi.PrestoException;
+import com.facebook.presto.spi.SplitContext;
 import com.google.common.base.Function;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
@@ -36,6 +37,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -149,14 +151,21 @@ public class SimpleNodeSelector
                 throw new PrestoException(NO_NODES_AVAILABLE, "No nodes available to run query");
             }
 
-            InternalNode chosenNode = chooseLeastBusyNode(candidateNodes, assignmentStats::getTotalSplitCount, preferredNodeCount, maxSplitsPerNode);
-            if (chosenNode == null) {
+            NodeResult chosenNode = chooseLeastBusyNode(candidateNodes, assignmentStats::getTotalSplitCount, preferredNodeCount, maxSplitsPerNode);
+            if (!chosenNode.getNode().isPresent()) {
                 chosenNode = chooseLeastBusyNode(candidateNodes, assignmentStats::getQueuedSplitCountForStage, preferredNodeCount, maxPendingSplitsPerTask);
             }
 
-            if (chosenNode != null) {
-                assignment.put(chosenNode, split);
-                assignmentStats.addAssignedSplit(chosenNode);
+            if (chosenNode.getNode().isPresent()) {
+                split = new Split(
+                        split.getConnectorId(),
+                        split.getTransactionHandle(),
+                        split.getConnectorSplit(),
+                        split.getLifespan(),
+                        new SplitContext(chosenNode.ifShouldCache()));
+
+                assignment.put(chosenNode.getNode().get(), split);
+                assignmentStats.addAssignedSplit(chosenNode.getNode().get());
             }
             else {
                 if (split.getNodeSelectionStrategy() != HARD_AFFINITY) {
@@ -192,7 +201,7 @@ public class SimpleNodeSelector
         return ImmutableList.copyOf(internalNodes);
     }
 
-    private static InternalNode chooseLeastBusyNode(List<InternalNode> candidateNodes, Function<InternalNode, Integer> splitCountProvider, OptionalInt preferredNodeCount, int maxSplitCount)
+    private static NodeResult chooseLeastBusyNode(List<InternalNode> candidateNodes, Function<InternalNode, Integer> splitCountProvider, OptionalInt preferredNodeCount, int maxSplitCount)
     {
         int min = Integer.MAX_VALUE;
         InternalNode chosenNode = null;
@@ -202,7 +211,7 @@ public class SimpleNodeSelector
 
             // choose the preferred node first as long as they're not busy
             if (preferredNodeCount.isPresent() && i < preferredNodeCount.getAsInt() && splitCount < maxSplitCount) {
-                return node;
+                return new NodeResult(Optional.of(node), true);
             }
             // fallback to choosing the least busy nodes
             if (splitCount < min && splitCount < maxSplitCount) {
@@ -210,6 +219,28 @@ public class SimpleNodeSelector
                 min = splitCount;
             }
         }
-        return chosenNode;
+        return new NodeResult(Optional.ofNullable(chosenNode), false);
+    }
+
+    private static class NodeResult
+    {
+        private Optional<InternalNode> node;
+        private boolean shouldCache;
+
+        public NodeResult(Optional<InternalNode> node, boolean shouldCache)
+        {
+            this.node = requireNonNull(node, "Optional<InternalNode> is null");
+            this.shouldCache = shouldCache;
+        }
+
+        public Optional<InternalNode> getNode()
+        {
+            return node;
+        }
+
+        public boolean ifShouldCache()
+        {
+            return shouldCache;
+        }
     }
 }
