@@ -25,6 +25,7 @@ import com.facebook.presto.execution.StageExecutionState;
 import com.facebook.presto.execution.StageId;
 import com.facebook.presto.execution.TaskStatus;
 import com.facebook.presto.execution.buffer.OutputBuffers;
+import com.facebook.presto.execution.scheduler.group.DynamicBucketNodeMap;
 import com.facebook.presto.execution.scheduler.nodeSelection.NodeSelector;
 import com.facebook.presto.failureDetector.FailureDetector;
 import com.facebook.presto.metadata.InternalNode;
@@ -335,8 +336,8 @@ public class SectionExecutionFactory
                     // verify execution is consistent with planner's decision on dynamic lifespan schedule
                     verify(bucketNodeMap.isDynamic() == dynamicLifespanSchedule);
 
-                    if (!bucketNodeMap.isDynamic()) {
-                        stageNodeList = ((FixedBucketNodeMap) bucketNodeMap).getBucketToNode().stream()
+                    if (bucketNodeMap.hasInitialMap()) {
+                        stageNodeList = bucketNodeMap.getBucketToNode().get().stream()
                                 .distinct()
                                 .collect(toImmutableList());
                     }
