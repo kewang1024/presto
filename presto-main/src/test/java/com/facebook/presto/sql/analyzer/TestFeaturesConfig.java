@@ -149,7 +149,8 @@ public class TestFeaturesConfig
                 .setPreferDistributedUnion(true)
                 .setOptimizeNullsInJoin(false)
                 .setWarnOnNoTableLayoutFilter("")
-                .setInlineSqlFunctions(true));
+                .setInlineSqlFunctions(true)
+                .setCheckAccessControlOnUtilizedColumnsOnly(false));
     }
 
     @Test
@@ -253,6 +254,7 @@ public class TestFeaturesConfig
                 .put("optimize-nulls-in-join", "true")
                 .put("warn-on-no-table-layout-filter", "ry@nlikestheyankees,ds")
                 .put("inline-sql-functions", "false")
+                .put("check-access-control-on-utilized-columns-only", "true")
                 .build();
 
         FeaturesConfig expected = new FeaturesConfig()
@@ -352,7 +354,8 @@ public class TestFeaturesConfig
                 .setPreferDistributedUnion(false)
                 .setOptimizeNullsInJoin(true)
                 .setWarnOnNoTableLayoutFilter("ry@nlikestheyankees,ds")
-                .setInlineSqlFunctions(false);
+                .setInlineSqlFunctions(false)
+                .setCheckAccessControlOnUtilizedColumnsOnly(true);
         assertFullMapping(properties, expected);
     }
 
