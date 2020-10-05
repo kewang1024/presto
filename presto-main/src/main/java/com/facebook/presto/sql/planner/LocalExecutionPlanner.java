@@ -168,6 +168,7 @@ import com.facebook.presto.sql.gen.JoinFilterFunctionCompiler.JoinFilterFunction
 import com.facebook.presto.sql.gen.OrderingCompiler;
 import com.facebook.presto.sql.gen.PageFunctionCompiler;
 import com.facebook.presto.sql.planner.optimizations.IndexJoinOptimizer;
+import com.facebook.presto.sql.planner.optimizations.PlanNodeSearcher;
 import com.facebook.presto.sql.planner.plan.AbstractJoinNode;
 import com.facebook.presto.sql.planner.plan.AssignUniqueId;
 import com.facebook.presto.sql.planner.plan.DeleteNode;
@@ -241,6 +242,7 @@ import static com.facebook.presto.SystemSessionProperties.getDynamicFilteringMax
 import static com.facebook.presto.SystemSessionProperties.getDynamicFilteringMaxPerDriverSize;
 import static com.facebook.presto.SystemSessionProperties.getFilterAndProjectMinOutputPageRowCount;
 import static com.facebook.presto.SystemSessionProperties.getFilterAndProjectMinOutputPageSize;
+import static com.facebook.presto.SystemSessionProperties.getHashBuilderTaskConcurrency;
 import static com.facebook.presto.SystemSessionProperties.getIndexLoaderTimeout;
 import static com.facebook.presto.SystemSessionProperties.getTaskConcurrency;
 import static com.facebook.presto.SystemSessionProperties.getTaskPartitionedWriterCount;
@@ -2149,6 +2151,9 @@ public class LocalExecutionPlanner
             boolean isBroadcastJoin = distributionType.isPresent() && distributionType.get() == REPLICATED;
 
             LocalExecutionPlanContext buildContext = context.createSubContext();
+            if (isExchangedToMultipleTasks(buildNode)) {
+                buildContext.setDriverInstanceCount(getHashBuilderTaskConcurrency(session));
+            }
             PhysicalOperation buildSource = buildNode.accept(this, buildContext);
 
             if (buildSource.getPipelineExecutionStrategy() == GROUPED_EXECUTION) {
@@ -2246,6 +2251,16 @@ public class LocalExecutionPlanner
                     buildSource.getPipelineExecutionStrategy());
 
             return lookupSourceFactoryManager;
+        }
+
+        private boolean isExchangedToMultipleTasks(PlanNode buildNode)
+        {
+            return PlanNodeSearcher.searchFrom(buildNode)
+                    .where(
+                            node -> node instanceof ExchangeNode &&
+                                    ((ExchangeNode) node).getScope().isLocal() &&
+                                    ((ExchangeNode) node).getType() != ExchangeNode.Type.GATHER)
+                    .matches();
         }
 
         private DynamicFilterSourceOperator.DynamicFilterSourceOperatorFactory createDynamicFilterSourceOperatorFactory(

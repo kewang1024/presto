@@ -72,6 +72,7 @@ public class TaskManagerConfig
     private int writerCount = 1;
     private Integer partitionedWriterCount;
     private int taskConcurrency = 16;
+    private int hashBuilderTaskConcurrency = 16;
     private int httpResponseThreads = 100;
     private int httpTimeoutConcurrency = 3;
     private int httpTimeoutThreads = 3;
@@ -453,6 +454,21 @@ public class TaskManagerConfig
     public TaskManagerConfig setTaskConcurrency(int taskConcurrency)
     {
         this.taskConcurrency = taskConcurrency;
+        return this;
+    }
+
+    @Min(1)
+    @PowerOfTwo
+    public int getHashBuilderTaskConcurrency()
+    {
+        return hashBuilderTaskConcurrency;
+    }
+
+    @Config("task.hash-builder-concurrency")
+    @ConfigDescription("Default number of local parallel jobs per worker")
+    public TaskManagerConfig setHashBuilderTaskConcurrency(int taskConcurrency)
+    {
+        this.hashBuilderTaskConcurrency = taskConcurrency;
         return this;
     }
 
