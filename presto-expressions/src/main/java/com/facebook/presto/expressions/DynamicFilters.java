@@ -21,6 +21,7 @@ import com.facebook.presto.spi.function.TypeParameter;
 import com.facebook.presto.spi.relation.CallExpression;
 import com.facebook.presto.spi.relation.ConstantExpression;
 import com.facebook.presto.spi.relation.RowExpression;
+import com.facebook.presto.spi.relation.SpecialFormExpression;
 import com.google.common.collect.ImmutableList;
 import io.airlift.slice.Slice;
 
@@ -32,6 +33,8 @@ import static com.facebook.presto.common.type.StandardTypes.BOOLEAN;
 import static com.facebook.presto.common.type.StandardTypes.VARCHAR;
 import static com.facebook.presto.expressions.LogicalRowExpressions.extractConjuncts;
 import static com.facebook.presto.spi.function.SqlFunctionVisibility.HIDDEN;
+import static com.facebook.presto.spi.relation.SpecialFormExpression.Form.AND;
+import static com.facebook.presto.spi.relation.SpecialFormExpression.Form.OR;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.Objects.requireNonNull;
@@ -64,8 +67,7 @@ public final class DynamicFilters
     {
         ImmutableList.Builder<RowExpression> dynamicConjuncts = ImmutableList.builder();
         for (RowExpression conjunct : conjuncts) {
-            Optional<DynamicFilterPlaceholder> placeholder = getPlaceholder(conjunct);
-            if (placeholder.isPresent()) {
+            if (containsDynamicFilter(conjunct)) {
                 dynamicConjuncts.add(conjunct);
             }
         }
@@ -77,13 +79,29 @@ public final class DynamicFilters
     {
         ImmutableList.Builder<RowExpression> staticConjuncts = ImmutableList.builder();
         for (RowExpression conjunct : conjuncts) {
-            Optional<DynamicFilterPlaceholder> placeholder = getPlaceholder(conjunct);
-            if (!placeholder.isPresent()) {
+            if (!containsDynamicFilter(conjunct)) {
                 staticConjuncts.add(conjunct);
             }
         }
 
         return logicalRowExpressions.combineConjuncts(staticConjuncts.build());
+    }
+
+    private static boolean containsDynamicFilter(RowExpression conjunct)
+    {
+        if (conjunct instanceof SpecialFormExpression && isConjunctiveDisjunctive(((SpecialFormExpression)conjunct).getForm())) {
+            for (RowExpression expression : ((SpecialFormExpression)conjunct).getArguments()) {
+                if (containsDynamicFilter(expression)) {
+                    return true;
+                }
+            }
+        }
+        return isDynamicFilter(conjunct);
+    }
+
+    private static boolean isConjunctiveDisjunctive(SpecialFormExpression.Form form)
+    {
+        return form == AND || form == OR;
     }
 
     public static boolean isDynamicFilter(RowExpression expression)
