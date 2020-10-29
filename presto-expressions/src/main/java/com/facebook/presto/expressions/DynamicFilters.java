@@ -89,7 +89,7 @@ public final class DynamicFilters
 
     private static boolean containsDynamicFilter(RowExpression conjunct)
     {
-        if (conjunct instanceof SpecialFormExpression && isConjunctiveDisjunctive(((SpecialFormExpression)conjunct).getForm())) {
+        if (conjunct instanceof SpecialFormExpression) {
             for (RowExpression expression : ((SpecialFormExpression)conjunct).getArguments()) {
                 if (containsDynamicFilter(expression)) {
                     return true;
