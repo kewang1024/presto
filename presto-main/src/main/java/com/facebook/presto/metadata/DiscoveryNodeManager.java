@@ -131,6 +131,13 @@ public final class DiscoveryNodeManager
         this.protocol = internalCommunicationConfig.getServerInfoCommunicationProtocol();
 
         refreshNodesInternal();
+        log.info("DiscoveryNodeManager initialization:");
+        activeNodesByConnectorId.asMap().forEach((connectorId, nodes) -> {
+            log.info("connectorId: %s", connectorId);
+            nodes.stream().forEach(node -> {
+                log.info("%s, %s, %s; ", node.getNodeIdentifier(), node.getHostAndPort(), node.getHostAndPort().hashCode());
+            });
+        });
     }
 
     private static InternalNode findCurrentNode(List<ServiceDescriptor> allServices, String currentNodeId, NodeVersion expectedNodeVersion, boolean httpsRequired)
