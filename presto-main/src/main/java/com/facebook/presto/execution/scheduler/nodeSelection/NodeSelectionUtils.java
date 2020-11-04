@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.execution.scheduler.nodeSelection;
 
+import com.facebook.airlift.log.Logger;
 import com.facebook.presto.execution.scheduler.NodeMap;
 import com.facebook.presto.execution.scheduler.NodeSelectionHashFunction;
 import com.facebook.presto.metadata.InternalNode;
@@ -31,6 +32,7 @@ import static java.util.Comparator.comparing;
 
 public class NodeSelectionUtils
 {
+    private static final Logger log = Logger.get(NodeSelectionUtils.class);
     private NodeSelectionUtils() {}
 
     static List<HostAddress> sortedNodes(NodeMap nodeMap)
@@ -47,6 +49,10 @@ public class NodeSelectionUtils
                 // todo identify if sorting will cause bottleneck
                 return new ModularHashingNodeProvider<>(sortedNodes(nodeMap));
             case CONSISTENT_HASHING:
+                log.error("consistent hashing nodes:");
+                nodeMap.getHostAndAddress().stream().forEach(hostAddress -> {
+                    log.error("%s;", hostAddress.hashCode());
+                });
                 return new ConsistentHashingNodeProvider<>(nodeMap.getHostAndAddress());
             default:
                 throw new PrestoException(NODE_SELECTION_NOT_SUPPORTED, format("Unsupported node selection hash function %s", nodeSelectionHashFunction.name()));
