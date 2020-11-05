@@ -29,6 +29,22 @@ public class TestConsistentHashingNodeProvider
         TestingProviderNode node4 = new TestingProviderNode(40);
         NodeProvider<TestingProviderNode> nodeProvider = new ConsistentHashingNodeProvider<>(ImmutableList.of(node1, node2, node3, node4));
         assertEquals(nodeProvider.get(13, 2), ImmutableList.of(node2, node3));
+        assertEquals(nodeProvider.get(14, 2), ImmutableList.of(node2, node3));
+        assertEquals(nodeProvider.get(23, 5), ImmutableList.of(node3, node4, node1, node2));
+        assertEquals(nodeProvider.get(33, 4), ImmutableList.of(node4, node1, node2, node3));
+        assertEquals(nodeProvider.get(50, 2), ImmutableList.of(node1, node2));
+        assertEquals(nodeProvider.get(-100, 2), ImmutableList.of(node1, node2));
+
+        // remove one node
+        nodeProvider = new ConsistentHashingNodeProvider<>(ImmutableList.of(node1, node2, node4));
+        assertEquals(nodeProvider.get(13, 2), ImmutableList.of(node2, node4));
+        assertEquals(nodeProvider.get(14, 2), ImmutableList.of(node2, node4));
+        assertEquals(nodeProvider.get(23, 5), ImmutableList.of(node4, node1, node2));
+
+        // Add one node
+        nodeProvider = new ConsistentHashingNodeProvider<>(ImmutableList.of(node1, node2, node3, node4));
+        assertEquals(nodeProvider.get(13, 2), ImmutableList.of(node2, node3));
+        assertEquals(nodeProvider.get(14, 2), ImmutableList.of(node2, node3));
         assertEquals(nodeProvider.get(23, 5), ImmutableList.of(node3, node4, node1, node2));
     }
 }
