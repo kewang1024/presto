@@ -53,7 +53,9 @@ public class NodeSelectionUtils
                 nodeMap.getHostAndAddress().stream().forEach(hostAddress -> {
                     log.error("%s;", hostAddress.hashCode());
                 });
-                return new ConsistentHashingNodeProvider<>(nodeMap.getHostAndAddress());
+                ConsistentHashingNodeProvider provider = new ConsistentHashingNodeProvider<>(nodeMap.getHostAndAddress());
+                log.error("consistent hashing ring: %", provider.getRing());
+                return provider;
             default:
                 throw new PrestoException(NODE_SELECTION_NOT_SUPPORTED, format("Unsupported node selection hash function %s", nodeSelectionHashFunction.name()));
         }

@@ -79,4 +79,9 @@ public class ConsistentHashingNodeProvider<T>
     {
         circle.put(node.hashCode(), node);
     }
+
+    public String getRing()
+    {
+        return circle.toString();
+    }
 }
