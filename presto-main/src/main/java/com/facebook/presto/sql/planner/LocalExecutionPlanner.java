@@ -1352,6 +1352,8 @@ public class LocalExecutionPlanner
                 LocalDynamicFiltersCollector collector = context.getDynamicFiltersCollector();
                 dynamicFilterSupplier = Optional.of(() -> {
                     TupleDomain<VariableReferenceExpression> predicate = collector.getPredicate();
+                    // RowExpression rowExpression = rowExpressionService.getDomainTranslator().toPredicate(predicate);
+                    // should we return the TupleDomain<VariableReferenceExpression> predicate instead of TupleDomain<ColumnHandle>?
                     return predicate.transform(tableScanNode.getAssignments()::get);
                 });
             }

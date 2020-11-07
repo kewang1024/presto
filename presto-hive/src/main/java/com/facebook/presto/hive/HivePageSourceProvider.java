@@ -19,11 +19,13 @@ import com.facebook.presto.common.Subfield.PathElement;
 import com.facebook.presto.common.predicate.Domain;
 import com.facebook.presto.common.predicate.NullableValue;
 import com.facebook.presto.common.predicate.TupleDomain;
+import com.facebook.presto.common.type.ArrayType;
 import com.facebook.presto.common.type.Type;
 import com.facebook.presto.common.type.TypeManager;
 import com.facebook.presto.hive.HiveSplit.BucketConversion;
 import com.facebook.presto.hive.metastore.Column;
 import com.facebook.presto.hive.metastore.Storage;
+import com.facebook.presto.orc.TupleDomainFilterUtils;
 import com.facebook.presto.spi.ColumnHandle;
 import com.facebook.presto.spi.ConnectorPageSource;
 import com.facebook.presto.spi.ConnectorSession;
@@ -38,11 +40,15 @@ import com.facebook.presto.spi.connector.ConnectorPageSourceProvider;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
 import com.facebook.presto.spi.relation.RowExpression;
 import com.facebook.presto.spi.relation.RowExpressionService;
+import com.facebook.presto.spi.relation.VariableReferenceExpression;
+import com.facebook.presto.spi.security.AccessDeniedException;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import com.google.common.collect.ImmutableBiMap;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import io.airlift.units.DataSize;
 import org.apache.hadoop.conf.Configuration;
@@ -153,6 +159,7 @@ public class HivePageSourceProvider
                     selectedColumns,
                     hiveStorageTimeZone,
                     typeManager,
+                    rowExpressionService,
                     optimizedRowExpressionCache,
                     splitContext,
                     encryptionInformation);
@@ -238,6 +245,7 @@ public class HivePageSourceProvider
             List<HiveColumnHandle> columns,
             DateTimeZone hiveStorageTimeZone,
             TypeManager typeManager,
+            RowExpressionService rowExpressionService,
             LoadingCache<RowExpressionCacheKey, RowExpression> rowExpressionCache,
             SplitContext splitContext,
             Optional<EncryptionInformation> encryptionInformation)
@@ -291,6 +299,25 @@ public class HivePageSourceProvider
 
         CacheQuota cacheQuota = generateCacheQuota(split);
         for (HiveSelectivePageSourceFactory pageSourceFactory : selectivePageSourceFactories) {
+            Optional<TupleDomain<ColumnHandle>> dynamicFilters = splitContext.getDynamicFilterPredicate();
+
+            Map<ColumnHandle, VariableReferenceExpression> assignments;
+
+            TupleDomain<ColumnHandle> pusheddownDynamicFilter = TupleDomain.all();
+            if (dynamicFilters.isPresent()) {
+                dynamicFilters.get().getDomains().get().entrySet().stream().forEach(columnHandleDomainEntry -> {
+                    try {
+                        TupleDomainFilterUtils.toFilter(columnHandleDomainEntry.getValue());
+                        pusheddownDynamicFilter.intersect(TupleDomain.withColumnDomains(ImmutableMap.of(columnHandleDomainEntry.getKey(), columnHandleDomainEntry.getValue())));
+                    }
+                    catch (UnsupportedOperationException e) {
+                        // We need TupleDomain<VariableReferenceExpression>
+                        // RowExpression rowExpression = rowExpressionService.getDomainTranslator().toPredicate(predicate);
+                        // how to merge the rowExpression to optimizedRemainingPredicate?
+                    }
+                });
+            }
+
             Optional<? extends ConnectorPageSource> pageSource = pageSourceFactory.createPageSource(
                     configuration,
                     session,
@@ -304,8 +331,8 @@ public class HivePageSourceProvider
                     coercers,
                     bucketAdaptation,
                     outputColumns,
-                    splitContext.getDynamicFilterPredicate().map(filter -> filter.transform(
-                            handle -> new Subfield(((HiveColumnHandle) handle).getName())).intersect(layout.getDomainPredicate())).orElse(layout.getDomainPredicate()),
+                    pusheddownDynamicFilter.transform(
+                            handle -> new Subfield(((HiveColumnHandle) handle).getName())).intersect(layout.getDomainPredicate()),
                     optimizedRemainingPredicate,
                     hiveStorageTimeZone,
                     new HiveFileContext(splitContext.isCacheable(), cacheQuota, split.getExtraFileInfo().map(BinaryExtraHiveFileInfo::new), Optional.of(split.getFileSize())),
