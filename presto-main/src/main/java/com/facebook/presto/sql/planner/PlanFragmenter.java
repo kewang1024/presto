@@ -94,8 +94,10 @@ import java.util.Set;
 import static com.facebook.presto.SystemSessionProperties.getExchangeMaterializationStrategy;
 import static com.facebook.presto.SystemSessionProperties.getQueryMaxStageCount;
 import static com.facebook.presto.SystemSessionProperties.getTaskPartitionedWriterCount;
+import static com.facebook.presto.SystemSessionProperties.isDynamicScheduleForGroupedExecution;
 import static com.facebook.presto.SystemSessionProperties.isForceSingleNodeOutput;
-import static com.facebook.presto.SystemSessionProperties.isGroupedExecutionEnabled;
+import static com.facebook.presto.SystemSessionProperties.isGroupedExecutionForAggregationEnabled;
+import static com.facebook.presto.SystemSessionProperties.isGroupedExecutionForJoinEnabled;
 import static com.facebook.presto.SystemSessionProperties.isRecoverableGroupedExecutionEnabled;
 import static com.facebook.presto.SystemSessionProperties.isTableWriterMergeOperatorEnabled;
 import static com.facebook.presto.common.type.BigintType.BIGINT;
@@ -250,7 +252,8 @@ public class PlanFragmenter
         PlanFragment fragment = subPlan.getFragment();
         GroupedExecutionProperties properties = fragment.getRoot().accept(new GroupedExecutionTagger(session, metadata, nodePartitioningManager), null);
         if (properties.isSubTreeUseful()) {
-            boolean preferDynamic = fragment.getRemoteSourceNodes().stream().allMatch(node -> node.getExchangeType() == REPLICATE);
+            boolean preferDynamic = fragment.getRemoteSourceNodes().stream().allMatch(node -> node.getExchangeType() == REPLICATE)
+                    && isDynamicScheduleForGroupedExecution(session);
             BucketNodeMap bucketNodeMap = nodePartitioningManager.getBucketNodeMap(session, fragment.getPartitioning(), preferDynamic);
             if (bucketNodeMap.isDynamic()) {
                 /*
@@ -978,14 +981,16 @@ public class PlanFragmenter
         private final Session session;
         private final Metadata metadata;
         private final NodePartitioningManager nodePartitioningManager;
-        private final boolean groupedExecutionEnabled;
+        private final boolean groupedExecutionForAggregation;
+        private final boolean groupedExecutionForJoin;
 
         public GroupedExecutionTagger(Session session, Metadata metadata, NodePartitioningManager nodePartitioningManager)
         {
             this.session = requireNonNull(session, "session is null");
             this.metadata = requireNonNull(metadata, "metadata is null");
             this.nodePartitioningManager = requireNonNull(nodePartitioningManager, "nodePartitioningManager is null");
-            this.groupedExecutionEnabled = isGroupedExecutionEnabled(session);
+            this.groupedExecutionForAggregation = isGroupedExecutionForAggregationEnabled(session);
+            this.groupedExecutionForJoin = isGroupedExecutionForJoinEnabled(session);
         }
 
         @Override
@@ -1003,7 +1008,7 @@ public class PlanFragmenter
             GroupedExecutionProperties left = node.getLeft().accept(this, null);
             GroupedExecutionProperties right = node.getRight().accept(this, null);
 
-            if (!node.getDistributionType().isPresent() || !groupedExecutionEnabled) {
+            if (!node.getDistributionType().isPresent() || !groupedExecutionForJoin) {
                 // This is possible when the optimizers is invoked with `forceSingleNode` set to true.
                 return GroupedExecutionProperties.notCapable();
             }
@@ -1069,7 +1074,7 @@ public class PlanFragmenter
         public GroupedExecutionProperties visitAggregation(AggregationNode node, Void context)
         {
             GroupedExecutionProperties properties = node.getSource().accept(this, null);
-            if (groupedExecutionEnabled && properties.isCurrentNodeCapable()) {
+            if (groupedExecutionForAggregation && properties.isCurrentNodeCapable()) {
                 switch (node.getStep()) {
                     case SINGLE:
                     case FINAL:
@@ -1103,7 +1108,7 @@ public class PlanFragmenter
         private GroupedExecutionProperties processWindowFunction(PlanNode node)
         {
             GroupedExecutionProperties properties = getOnlyElement(node.getSources()).accept(this, null);
-            if (groupedExecutionEnabled && properties.isCurrentNodeCapable()) {
+            if (groupedExecutionForAggregation && properties.isCurrentNodeCapable()) {
                 return new GroupedExecutionProperties(true, true, properties.capableTableScanNodes, properties.totalLifespans, properties.recoveryEligible);
             }
             return GroupedExecutionProperties.notCapable();
@@ -1113,7 +1118,7 @@ public class PlanFragmenter
         public GroupedExecutionProperties visitMarkDistinct(MarkDistinctNode node, Void context)
         {
             GroupedExecutionProperties properties = getOnlyElement(node.getSources()).accept(this, null);
-            if (groupedExecutionEnabled && properties.isCurrentNodeCapable()) {
+            if (groupedExecutionForAggregation && properties.isCurrentNodeCapable()) {
                 return new GroupedExecutionProperties(true, true, properties.capableTableScanNodes, properties.totalLifespans, properties.recoveryEligible);
             }
             return GroupedExecutionProperties.notCapable();

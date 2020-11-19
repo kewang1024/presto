@@ -72,7 +72,10 @@ public class FeaturesConfig
     private JoinDistributionType joinDistributionType = PARTITIONED;
     private DataSize joinMaxBroadcastTableSize;
     private boolean colocatedJoinsEnabled = true;
+    private boolean groupedExecutionForAggregationEnabled = true;
+    private boolean groupedExecutionForJoinEnabled = true;
     private boolean groupedExecutionEnabled = true;
+    private boolean dynamicScheduleForGroupedExecution = true;
     private boolean recoverableGroupedExecutionEnabled;
     private double maxFailedTaskPercentage = 0.3;
     private int maxStageRetries;
@@ -411,6 +414,32 @@ public class FeaturesConfig
         return this;
     }
 
+    public boolean isGroupedExecutionForAggregationEnabled()
+    {
+        return groupedExecutionForAggregationEnabled;
+    }
+
+    @Config("grouped-execution-for-aggregation-enabled")
+    @ConfigDescription("Use grouped execution for aggregation when possible")
+    public FeaturesConfig setGroupedExecutionForAggregationEnabled(boolean groupedExecutionForAggregationEnabled)
+    {
+        this.groupedExecutionForAggregationEnabled = groupedExecutionForAggregationEnabled;
+        return this;
+    }
+
+    public boolean isGroupedExecutionForJoinEnabled()
+    {
+        return groupedExecutionForJoinEnabled;
+    }
+
+    @Config("grouped-execution-for-join-enabled")
+    @ConfigDescription("Use grouped execution for join when possible")
+    public FeaturesConfig setGroupedExecutionForJoinEnabled(boolean groupedExecutionForJoinEnabled)
+    {
+        this.groupedExecutionForJoinEnabled = groupedExecutionForJoinEnabled;
+        return this;
+    }
+
     public boolean isGroupedExecutionEnabled()
     {
         return groupedExecutionEnabled;
@@ -421,6 +450,19 @@ public class FeaturesConfig
     public FeaturesConfig setGroupedExecutionEnabled(boolean groupedExecutionEnabled)
     {
         this.groupedExecutionEnabled = groupedExecutionEnabled;
+        return this;
+    }
+
+    public boolean isDynamicScheduleForGroupedExecutionEnabled()
+    {
+        return dynamicScheduleForGroupedExecution;
+    }
+
+    @Config("dynamic-schedule-for-grouped-execution")
+    @ConfigDescription("Experimental: Use dynamic schedule for grouped execution when possible")
+    public FeaturesConfig setDynamicScheduleForGroupedExecutionEnabled(boolean dynamicScheduleForGroupedExecution)
+    {
+        this.dynamicScheduleForGroupedExecution = dynamicScheduleForGroupedExecution;
         return this;
     }
 
