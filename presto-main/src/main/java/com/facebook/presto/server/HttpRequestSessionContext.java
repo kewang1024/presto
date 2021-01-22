@@ -36,6 +36,7 @@ import javax.ws.rs.core.Response.Status;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -99,7 +100,7 @@ public final class HttpRequestSessionContext
     private final boolean clientTransactionSupport;
     private final String clientInfo;
 
-    public HttpRequestSessionContext(HttpServletRequest servletRequest, SqlParserOptions sqlParserOptions)
+    public HttpRequestSessionContext(HttpServletRequest servletRequest, SqlParserOptions sqlParserOptions, Optional<String> additionalSessionProperty)
             throws WebApplicationException
     {
         catalog = trimEmptyToNull(servletRequest.getHeader(PRESTO_CATALOG));
@@ -128,32 +129,9 @@ public final class HttpRequestSessionContext
         // parse session properties
         ImmutableMap.Builder<String, String> systemProperties = ImmutableMap.builder();
         Map<String, Map<String, String>> catalogSessionProperties = new HashMap<>();
-        for (Entry<String, String> entry : parseSessionHeaders(servletRequest).entrySet()) {
-            String fullPropertyName = entry.getKey();
-            String propertyValue = entry.getValue();
-            List<String> nameParts = DOT_SPLITTER.splitToList(fullPropertyName);
-            if (nameParts.size() == 1) {
-                String propertyName = nameParts.get(0);
+        passSessionProperty(systemProperties, catalogSessionProperties, parseSessionHeaders(servletRequest), PRESTO_SESSION);
+        additionalSessionProperty.ifPresent(sessionProperty -> passSessionProperty(systemProperties, catalogSessionProperties, parseAdditionalSessionProperty(sessionProperty), "additionalSessionProperty"));
 
-                assertRequest(!propertyName.isEmpty(), "Invalid %s header", PRESTO_SESSION);
-
-                // catalog session properties can not be validated until the transaction has stated, so we delay system property validation also
-                systemProperties.put(propertyName, propertyValue);
-            }
-            else if (nameParts.size() == 2) {
-                String catalogName = nameParts.get(0);
-                String propertyName = nameParts.get(1);
-
-                assertRequest(!catalogName.isEmpty(), "Invalid %s header", PRESTO_SESSION);
-                assertRequest(!propertyName.isEmpty(), "Invalid %s header", PRESTO_SESSION);
-
-                // catalog session properties can not be validated until the transaction has stated
-                catalogSessionProperties.computeIfAbsent(catalogName, id -> new HashMap<>()).put(propertyName, propertyValue);
-            }
-            else {
-                throw badRequest(format("Invalid %s header", PRESTO_SESSION));
-            }
-        }
         this.systemProperties = systemProperties.build();
         this.catalogSessionProperties = catalogSessionProperties.entrySet().stream()
                 .collect(toImmutableMap(Entry::getKey, entry -> ImmutableMap.copyOf(entry.getValue())));
@@ -163,6 +141,47 @@ public final class HttpRequestSessionContext
         String transactionIdHeader = servletRequest.getHeader(PRESTO_TRANSACTION_ID);
         clientTransactionSupport = transactionIdHeader != null;
         transactionId = parseTransactionId(transactionIdHeader);
+    }
+
+    private void passSessionProperty(ImmutableMap.Builder<String, String> systemProperties, Map<String, Map<String, String>> catalogSessionProperties, Map<String, String> sessionProperties, String sessionPropertyOrigin)
+    {
+        for (Entry<String, String> entry : sessionProperties.entrySet()) {
+            String fullPropertyName = entry.getKey();
+            String propertyValue = entry.getValue();
+            List<String> nameParts = DOT_SPLITTER.splitToList(fullPropertyName);
+            if (nameParts.size() == 1) {
+                String propertyName = nameParts.get(0);
+
+                assertRequest(!propertyName.isEmpty(), "Invalid %s", sessionPropertyOrigin);
+
+                // catalog session properties can not be validated until the transaction has stated, so we delay system property validation also
+                systemProperties.put(propertyName, propertyValue);
+            }
+            else if (nameParts.size() == 2) {
+                String catalogName = nameParts.get(0);
+                String propertyName = nameParts.get(1);
+
+                assertRequest(!catalogName.isEmpty(), "Invalid %s", sessionPropertyOrigin);
+                assertRequest(!propertyName.isEmpty(), "Invalid %s", sessionPropertyOrigin);
+
+                // catalog session properties can not be validated until the transaction has stated
+                catalogSessionProperties.computeIfAbsent(catalogName, id -> new HashMap<>()).put(propertyName, propertyValue);
+            }
+            else {
+                throw badRequest(format("Invalid %s", sessionPropertyOrigin));
+            }
+        }
+    }
+
+    private Map<String, String> parseAdditionalSessionProperty(String additionalSessionProperty)
+    {
+        Map<String, String> properties = new HashMap<>();
+        for (String header : splitSessionHeader(Collections.enumeration(Splitter.on(':').trimResults().splitToList(additionalSessionProperty)))) {
+            List<String> nameValue = Splitter.on('=').trimResults().splitToList(header);
+            assertRequest(nameValue.size() == 2, "Invalid additionalSessionProperty: %s", additionalSessionProperty);
+            properties.put(nameValue.get(0), urlDecode(nameValue.get(1)));
+        }
+        return properties;
     }
 
     private static List<String> splitSessionHeader(Enumeration<String> headers)
