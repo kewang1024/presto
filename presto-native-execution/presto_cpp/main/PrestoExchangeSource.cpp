@@ -19,8 +19,10 @@
 #include <sstream>
 
 #include "presto_cpp/main/QueryContextManager.h"
+#include "presto_cpp/main/common/Counters.h"
 #include "presto_cpp/presto_protocol/presto_protocol.h"
 #include "velox/common/base/Exceptions.h"
+#include "velox/common/base/StatsReporter.h"
 #include "velox/exec/Operator.h"
 
 using namespace facebook::velox;
@@ -61,8 +63,16 @@ PrestoExchangeSource::PrestoExchangeSource(
       port_(baseUri.port()) {
   folly::SocketAddress address(folly::IPAddress(host_).str(), port_, true);
   auto* eventBase = folly::getUnsafeMutableGlobalEventBase();
+  std::function<void(int)> reportOnBodyStatsFunc = [](size_t bufferBytes) {
+    REPORT_ADD_STAT_VALUE(kCounterHttpClientPrestoExchangeNumOnBody);
+    REPORT_ADD_HISTOGRAM_VALUE(
+        kCounterHttpClientPrestoExchangeOnBodyBytes, bufferBytes);
+  };
   httpClient_ = std::make_unique<http::HttpClient>(
-      eventBase, address, std::chrono::milliseconds(10'000));
+      eventBase,
+      address,
+      std::move(reportOnBodyStatsFunc),
+      std::chrono::milliseconds(10'000));
 }
 
 bool PrestoExchangeSource::shouldRequestLocked() {
@@ -171,6 +181,8 @@ void PrestoExchangeSource::processDataResponse(
           } while (curr != start);
           PrestoExchangeSource::updateMemoryUsage(-freedBytes);
         });
+    REPORT_ADD_HISTOGRAM_VALUE(
+        kCounterPrestoExchangeSerializedPageSize, page->size());
   }
 
   {

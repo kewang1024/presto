@@ -131,9 +131,10 @@ class HttpClientFactory {
 
   std::unique_ptr<http::HttpClient> newClient(
       const folly::SocketAddress& address,
-      const std::chrono::milliseconds& timeout) {
+      const std::chrono::milliseconds& timeout,
+      const std::function<void(int)>&& reportOnBodyStatsFunc = nullptr) {
     return std::make_unique<http::HttpClient>(
-        eventBase_.get(), address, timeout);
+        eventBase_.get(), address, timeout, reportOnBodyStatsFunc);
   }
 
  private:
@@ -163,8 +164,8 @@ TEST(HttpTest, basic) {
   auto serverAddress = wrapper.start().get();
 
   HttpClientFactory clientFactory;
-  auto client =
-      clientFactory.newClient(serverAddress, std::chrono::milliseconds(1'000));
+  auto client = clientFactory.newClient(
+      serverAddress, std::chrono::milliseconds(1'000));
 
   {
     auto response = sendGet(client.get(), "/ping", memoryPool.get()).get();
@@ -222,8 +223,8 @@ TEST(HttpTest, httpResponseAllocationFailure) {
   auto serverAddress = wrapper.start().get();
 
   HttpClientFactory clientFactory;
-  auto client =
-      clientFactory.newClient(serverAddress, std::chrono::milliseconds(1'000));
+  auto client = clientFactory.newClient(
+      serverAddress, std::chrono::milliseconds(1'000));
 
   {
     const std::string echoMessage(memoryCapBytes * 4, 'C');
@@ -250,8 +251,8 @@ TEST(HttpTest, serverRestart) {
   auto serverAddress = wrapper->start().get();
 
   HttpClientFactory clientFactory;
-  auto client =
-      clientFactory.newClient(serverAddress, std::chrono::milliseconds(1'000));
+  auto client = clientFactory.newClient(
+      serverAddress, std::chrono::milliseconds(1'000));
 
   auto response = sendGet(client.get(), "/ping", memoryPool.get()).get();
   ASSERT_EQ(response->headers()->getStatusCode(), http::kHttpOk);
@@ -265,8 +266,8 @@ TEST(HttpTest, serverRestart) {
   wrapper = std::make_unique<HttpServerWrapper>(std::move(server));
 
   serverAddress = wrapper->start().get();
-  client =
-      clientFactory.newClient(serverAddress, std::chrono::milliseconds(1'000));
+  client = clientFactory.newClient(
+      serverAddress, std::chrono::milliseconds(1'000));
   response = sendGet(client.get(), "/ping", memoryPool.get()).get();
   ASSERT_EQ(response->headers()->getStatusCode(), http::kHttpOk);
   wrapper->stop();
@@ -363,8 +364,8 @@ TEST(HttpTest, asyncRequests) {
   auto serverAddress = wrapper.start().get();
 
   HttpClientFactory clientFactory;
-  auto client =
-      clientFactory.newClient(serverAddress, std::chrono::milliseconds(1'000));
+  auto client = clientFactory.newClient(
+      serverAddress, std::chrono::milliseconds(1'000));
 
   auto [reqPromise, reqFuture] = folly::makePromiseContract<bool>();
   request->requestPromise = std::move(reqPromise);
@@ -399,8 +400,8 @@ TEST(HttpTest, timedOutRequests) {
   auto serverAddress = wrapper.start().get();
 
   HttpClientFactory clientFactory;
-  auto client =
-      clientFactory.newClient(serverAddress, std::chrono::milliseconds(1'000));
+  auto client = clientFactory.newClient(
+      serverAddress, std::chrono::milliseconds(1'000));
 
   request->maxWaitMillis = 100;
   auto [reqPromise, reqFuture] = folly::makePromiseContract<bool>();
@@ -434,8 +435,8 @@ TEST(HttpTest, DISABLED_outstandingRequests) {
   auto serverAddress = wrapper.start().get();
 
   HttpClientFactory clientFactory;
-  auto client =
-      clientFactory.newClient(serverAddress, std::chrono::milliseconds(10'000));
+  auto client = clientFactory.newClient(
+      serverAddress, std::chrono::milliseconds(10'000));
 
   request->maxWaitMillis = 0;
   auto [reqPromise, reqFuture] = folly::makePromiseContract<bool>();
@@ -451,6 +452,45 @@ TEST(HttpTest, DISABLED_outstandingRequests) {
 
   // Verify that Future's thenValue/thenError invoked.
   ASSERT_EQ(request->requestStatus, kStatusInvalid);
+}
+
+TEST(StatsReportTest, testReportOnBodyStatsFunc) {
+  std::atomic<int> reportedCount = 0;
+  std::function<void(int)> reportOnBodyStatsFunc = [&](size_t bufferBytes) {
+    reportedCount.fetch_add(bufferBytes);
+  };
+
+  auto memoryPool = getProcessDefaultMemoryManager().getPool(
+      "asyncRequests", MemoryPool::Kind::kLeaf);
+
+  auto server =
+      std::make_unique<http::HttpServer>(folly::SocketAddress("127.0.0.1", 0));
+
+  auto request = std::make_shared<AsyncMsgRequestState>();
+  server->registerGet("/async/msg", asyncMsg(request));
+
+  HttpServerWrapper wrapper(std::move(server));
+  auto serverAddress = wrapper.start().get();
+
+  HttpClientFactory clientFactory;
+  auto client = clientFactory.newClient(
+      serverAddress, std::chrono::milliseconds(1'000), std::move(reportOnBodyStatsFunc));
+
+  auto [reqPromise, reqFuture] = folly::makePromiseContract<bool>();
+  request->requestPromise = std::move(reqPromise);
+
+  auto responseFuture = sendGet(client.get(), "/async/msg", memoryPool.get());
+
+  // Wait until the request reaches to the server.
+  std::string responseData = "Success";
+  std::move(reqFuture).wait();
+  if (auto msgPromise = request->msgPromise.lock()) {
+    msgPromise->promise.setValue(responseData);
+  }
+  auto response = std::move(responseFuture).get();
+
+  ASSERT_EQ(reportedCount, responseData.size());
+  wrapper.stop();
 }
 
 // Initialize singleton for the reporter
