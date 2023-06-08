@@ -25,37 +25,81 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 
+import javax.annotation.concurrent.Immutable;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.Objects.requireNonNull;
 
 public class StatisticAggregations
 {
+    // Added to preserve the order for serializing and deserializing.
+    // map in c++ worker doesn't represent insertion order.
+    private final List<VariableReferenceExpression> variables;
+    private final List<Aggregation> variableAggregations;
+    // Only used internally for quick lookup.
     private final Map<VariableReferenceExpression, Aggregation> aggregations;
     private final List<VariableReferenceExpression> groupingVariables;
 
     @JsonCreator
     public StatisticAggregations(
-            @JsonProperty("aggregations") Map<VariableReferenceExpression, Aggregation> aggregations,
+            @JsonProperty("variables") List<VariableReferenceExpression> variables,
+            @JsonProperty("variableAggregations") List<Aggregation> variableAggregations,
             @JsonProperty("groupingVariables") List<VariableReferenceExpression> groupingVariables)
+    {
+        this.variables = ImmutableList.copyOf(requireNonNull(variables, "variables is null"));
+        this.variableAggregations = ImmutableList.copyOf(requireNonNull(variableAggregations, "variableAggregations is null"));
+        checkArgument(variables.size() == variableAggregations.size(), "variables and variableAggregations' sizes are different");
+        this.groupingVariables = ImmutableList.copyOf(requireNonNull(groupingVariables, "groupingVariables is null"));
+        ImmutableMap.Builder<VariableReferenceExpression, Aggregation> aggregationMapBuilder = ImmutableMap.builder();
+        for (int i = 0; i < variables.size(); i++) {
+            aggregationMapBuilder.put(variables.get(i), variableAggregations.get(i));
+        }
+        aggregations = aggregationMapBuilder.build();
+    }
+
+    public StatisticAggregations(
+            Map<VariableReferenceExpression, Aggregation> aggregations,
+            List<VariableReferenceExpression> groupingVariables)
     {
         this.aggregations = ImmutableMap.copyOf(requireNonNull(aggregations, "aggregations is null"));
         this.groupingVariables = ImmutableList.copyOf(requireNonNull(groupingVariables, "groupingVariables is null"));
+        ImmutableList.Builder<VariableReferenceExpression> variableBuilder = ImmutableList.builder();
+        ImmutableList.Builder<Aggregation> variableAggregationBuilder = ImmutableList.builder();
+        aggregations.entrySet().stream().forEach(aggregation -> {
+            variableBuilder.add(aggregation.getKey());
+            variableAggregationBuilder.add(aggregation.getValue());
+
+        });
+        this.variables = variableBuilder.build();
+        this.variableAggregations = variableAggregationBuilder.build();
     }
 
     @JsonProperty
-    public Map<VariableReferenceExpression, Aggregation> getAggregations()
+    public List<VariableReferenceExpression> getVariables()
     {
-        return aggregations;
+        return variables;
+    }
+
+    @JsonProperty
+    public List<Aggregation> getVariableAggregations()
+    {
+        return variableAggregations;
     }
 
     @JsonProperty
     public List<VariableReferenceExpression> getGroupingVariables()
     {
         return groupingVariables;
+    }
+
+    public Map<VariableReferenceExpression, Aggregation> getAggregations()
+    {
+        return aggregations;
     }
 
     public Parts splitIntoPartialAndFinal(VariableAllocator variableAllocator, FunctionAndTypeManager functionAndTypeManager)
