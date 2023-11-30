@@ -210,7 +210,7 @@ public class NodePartitioningManager
     private static List<InternalNode> getFixedMapping(ConnectorBucketNodeMap connectorBucketNodeMap)
     {
         String nodes = connectorBucketNodeMap.getFixedMapping().stream()
-                .map(InternalNode.class::cast).map(node->node.getHost())
+                .map(InternalNode.class::cast).map(node -> node.getHost())
                 .collect(Collectors.joining());
         log.error("getFixedMapping: " + nodes);
         return connectorBucketNodeMap.getFixedMapping().stream()
