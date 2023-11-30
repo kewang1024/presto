@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.sql.planner;
 
+import com.facebook.airlift.log.Logger;
 import com.facebook.presto.Session;
 import com.facebook.presto.common.type.Type;
 import com.facebook.presto.execution.scheduler.BucketNodeMap;
@@ -46,6 +47,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.function.ToIntFunction;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static com.facebook.presto.SystemSessionProperties.getMaxTasksPerStage;
@@ -61,6 +63,7 @@ public class NodePartitioningManager
     private final NodeScheduler nodeScheduler;
     private final PartitioningProviderManager partitioningProviderManager;
     private final NodeSelectionStats nodeSelectionStats;
+    private static final Logger log = Logger.get(NodePartitioningManager.class);
 
     @Inject
     public NodePartitioningManager(NodeScheduler nodeScheduler, PartitioningProviderManager partitioningProviderManager, NodeSelectionStats nodeSelectionStats)
@@ -206,6 +209,10 @@ public class NodePartitioningManager
 
     private static List<InternalNode> getFixedMapping(ConnectorBucketNodeMap connectorBucketNodeMap)
     {
+        String nodes = connectorBucketNodeMap.getFixedMapping().stream()
+                .map(InternalNode.class::cast).map(node->node.getHost())
+                .collect(Collectors.joining());
+        log.error("getFixedMapping: " + nodes);
         return connectorBucketNodeMap.getFixedMapping().stream()
                 .map(InternalNode.class::cast)
                 .collect(toImmutableList());
